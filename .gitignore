@@ -1,0 +1,15 @@
+# General
+backend/.env
+.env.local
+
+# Frontend
+frontend/node_modules/
+frontend/.expo/
+
+# Backend
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+
+# Others
+node_modules/
