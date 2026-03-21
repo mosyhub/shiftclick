@@ -7,6 +7,7 @@ import { useSelector } from 'react-redux';
 import { COLORS } from '../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/api';
+import { triggerLocalPromo } from '../utils/notifications';
 
 export default function AdminDashboard({ navigation }) {
   const { user, loading } = useSelector((s) => s.auth);
