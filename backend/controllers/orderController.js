@@ -103,27 +103,54 @@ const getAllOrders = async (req, res) => {
 
 // @desc    Update order status + send push notification
 // @route   PUT /api/orders/:id/status
-// @access  Admin
+// @access  Private (role-based logic inside)
 const updateOrderStatus = async (req, res) => {
   try {
-    const { status, note } = req.body;
+    const { status, note, paymentStatus } = req.body;
+    const isAdmin = req.user.role === 'admin';
 
-    const validStatuses = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({ message: 'Invalid status' });
-    }
-
-    const order = await Order.findById(req.params.id).populate('user', 'name expoPushTokens');
+    const order = await Order.findById(req.params.id).populate('user', 'name email expoPushTokens');
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
-    order.status = status;
-    order.statusHistory.push({ status, note: note || `Order ${status}`, updatedAt: new Date() });
+    // --- Role-based permission check ---
+    if (isAdmin) {
+      // Admin can only move order to Processing or Shipped
+      const adminAllowed = ['Processing', 'Shipped'];
+      if (!adminAllowed.includes(status)) {
+        return res.status(403).json({ message: `Admin can only set status to: ${adminAllowed.join(', ')}` });
+      }
+    } else {
+      // Customer can only mark as Delivered, and only if the order belongs to them
+      if (order.user._id.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: 'Not authorized to update this order.' });
+      }
+      if (status !== 'Delivered') {
+        return res.status(403).json({ message: 'You can only mark an order as Delivered.' });
+      }
+      if (order.status !== 'Shipped') {
+        return res.status(400).json({ message: 'Order must be Shipped before marking as Delivered.' });
+      }
+    }
 
-    if (status === 'Delivered') order.paymentStatus = 'Paid';
+    // Apply status
+    order.status = status;
+
+    // Auto-mark COD as Paid when Delivered
+    // Also accept explicit paymentStatus override from frontend (e.g. COD confirmation)
+    if (status === 'Delivered') {
+      order.paymentStatus = paymentStatus || (order.paymentMethod === 'COD' ? 'Paid' : order.paymentStatus);
+    }
+
+    // Append to status history
+    order.statusHistory.push({
+      status,
+      note: note || `Order ${status}`,
+      updatedAt: new Date(),
+    });
 
     await order.save();
 
-    // Send push notification
+    // --- Send push notification to customer ---
     const pushTokens = order.user?.expoPushTokens || [];
     if (pushTokens.length > 0) {
       const messages = [];

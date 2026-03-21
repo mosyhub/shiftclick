@@ -14,7 +14,7 @@ router.post('/', protect, createOrder);
 router.get('/my', protect, getMyOrders);
 router.get('/', protect, adminOnly, getAllOrders);
 router.get('/:id', protect, getOrderById);
-router.put('/:id/status', protect, adminOnly, updateOrderStatus);
+router.put('/:id/status', protect, updateOrderStatus); // ← removed adminOnly, logic handled in controller
 router.delete('/:id', protect, adminOnly, deleteOrder);
 
 module.exports = router;
