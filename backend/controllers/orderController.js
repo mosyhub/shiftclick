@@ -2,6 +2,7 @@ const Order = require('../models/Order');
 const Product = require('../models/Product');
 const { Expo } = require('expo-server-sdk');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 
 const expo = new Expo();
 
@@ -32,11 +33,16 @@ const createOrder = async (req, res) => {
       });
     }
 
+    // For non-COD payments (GCash, Credit Card, PayPal), assume payment is already confirmed
+    // For COD, payment status remains 'Pending' until delivery confirmation
+    const paymentStatusValue = (paymentMethod && paymentMethod !== 'COD') ? 'Paid' : 'Pending';
+
     const order = await Order.create({
       user: req.user._id,
       items,
       shippingAddress,
       paymentMethod: paymentMethod || 'COD',
+      paymentStatus: paymentStatusValue,
       subtotal,
       shippingFee: shippingFee || 0,
       total,
@@ -135,10 +141,16 @@ const updateOrderStatus = async (req, res) => {
     // Apply status
     order.status = status;
 
-    // Auto-mark COD as Paid when Delivered
-    // Also accept explicit paymentStatus override from frontend (e.g. COD confirmation)
-    if (status === 'Delivered') {
-      order.paymentStatus = paymentStatus || (order.paymentMethod === 'COD' ? 'Paid' : order.paymentStatus);
+    // Update payment status based on order status and payment method:
+    // - For COD: Mark as Paid when order is Delivered (customer confirms receipt)
+    // - For GCash/Credit Card/PayPal: Already marked as Paid during order creation
+    if (status === 'Delivered' && order.paymentMethod === 'COD') {
+      order.paymentStatus = 'Paid';
+    }
+
+    // Allow explicit paymentStatus override if needed (e.g., for refunds or payment failures)
+    if (paymentStatus) {
+      order.paymentStatus = paymentStatus;
     }
 
     // Append to status history
@@ -167,7 +179,32 @@ const updateOrderStatus = async (req, res) => {
       if (messages.length > 0) {
         const chunks = expo.chunkPushNotifications(messages);
         for (const chunk of chunks) {
-          try { await expo.sendPushNotificationsAsync(chunk); }
+          try { 
+            await expo.sendPushNotificationsAsync(chunk); 
+            
+            // Save notification records to database for each token
+            for (const tokenObj of pushTokens) {
+              if (!Expo.isExpoPushToken(tokenObj.token)) continue;
+              
+              try {
+                await Notification.create({
+                  recipientId: order.user._id,
+                  title: `Order ${status} 📦`,
+                  body: `Your order #${order._id.toString().slice(-6).toUpperCase()} is now ${status}`,
+                  data: {
+                    screen: 'OrderDetail',
+                    orderId: order._id,
+                  },
+                  type: 'order',
+                  expoToken: tokenObj.token,
+                  status: 'sent',
+                  sentAt: new Date(),
+                });
+              } catch (dbErr) {
+                console.error('Error saving notification to DB:', dbErr.message);
+              }
+            }
+          }
           catch (err) { console.error('Push error:', err); }
         }
       }

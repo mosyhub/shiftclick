@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, Image,
-  StyleSheet, ActivityIndicator, Alert, TextInput, RefreshControl,
+  StyleSheet, ActivityIndicator, Alert, TextInput, RefreshControl, Modal,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { COLORS } from '../constants/theme';
@@ -14,6 +14,11 @@ export default function AdminProducts({ navigation }) {
   const [productsLoading, setProductsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [promotionModal, setPromotionModal] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [promotionDiscount, setPromotionDiscount] = useState('');
+  const [promotionSendNotif, setPromotionSendNotif] = useState(false);
+  const [promotionLoading, setPromotionLoading] = useState(false);
 
   useEffect(() => {
     // Check if user is admin
@@ -72,6 +77,54 @@ export default function AdminProducts({ navigation }) {
     ]);
   };
 
+  const openPromotionModal = (product) => {
+    setSelectedProduct(product);
+    setPromotionDiscount(product.discount?.toString() || '0');
+    setPromotionSendNotif(false);
+    setPromotionModal(true);
+  };
+
+  const applyPromotion = async () => {
+    if (!selectedProduct) return;
+
+    const discount = parseInt(promotionDiscount, 10);
+    if (isNaN(discount) || discount < 0 || discount > 100) {
+      Alert.alert('Invalid Discount', 'Discount must be between 0 and 100');
+      return;
+    }
+
+    try {
+      setPromotionLoading(true);
+      const response = await api.post('/admin/apply-promotion', {
+        productId: selectedProduct._id,
+        discount,
+        sendNotification: promotionSendNotif && discount > 0,
+      });
+
+      // Update product in list
+      const updatedProducts = products.map((p) =>
+        p._id === selectedProduct._id ? response.data.product : p
+      );
+      setProducts(updatedProducts);
+
+      Alert.alert(
+        'Success',
+        promotionSendNotif
+          ? `Discount applied and notification sent to ${response.data.promotion.sentCount} users`
+          : 'Discount applied successfully'
+      );
+
+      setPromotionModal(false);
+      setSelectedProduct(null);
+      setPromotionDiscount('');
+    } catch (error) {
+      console.error('Error applying promotion:', error);
+      Alert.alert('Error', error.response?.data?.message || 'Failed to apply promotion');
+    } finally {
+      setPromotionLoading(false);
+    }
+  };
+
   const filteredProducts = products.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     p.brand.toLowerCase().includes(search.toLowerCase())
@@ -112,6 +165,12 @@ export default function AdminProducts({ navigation }) {
         </View>
       </View>
       <View style={styles.actionButtons}>
+        <TouchableOpacity
+          style={styles.promoteBtn}
+          onPress={() => openPromotionModal(item)}
+        >
+          <Ionicons name="pricetags" size={16} color={COLORS.warning} />
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.editBtn}
           onPress={() => navigation.navigate('ProductForm', { product: item })}
@@ -205,6 +264,85 @@ export default function AdminProducts({ navigation }) {
           <Text style={styles.summaryValue}>{products.filter((p) => p.stock === 0).length}</Text>
         </View>
       </View>
+
+      {/* Promotion Modal */}
+      <Modal visible={promotionModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Apply Promotion</Text>
+              <TouchableOpacity onPress={() => setPromotionModal(false)}>
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            {selectedProduct && (
+              <>
+                <View style={styles.productPreview}>
+                  <Text style={styles.previewLabel}>Product</Text>
+                  <Text style={styles.previewValue}>{selectedProduct.name}</Text>
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Discount (%)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter discount percentage"
+                    placeholderTextColor={COLORS.textMuted}
+                    keyboardType="numeric"
+                    value={promotionDiscount}
+                    onChangeText={setPromotionDiscount}
+                    maxLength={3}
+                  />
+                  <Text style={styles.helperText}>
+                    Original: ₱{selectedProduct.price.toFixed(2)}
+                    {promotionDiscount && parseInt(promotionDiscount) > 0 && (
+                      <Text>
+                        {' '} → New: ₱{(selectedProduct.price * (1 - parseInt(promotionDiscount) / 100)).toFixed(2)}
+                      </Text>
+                    )}
+                  </Text>
+                </View>
+
+                <View style={styles.checkboxContainer}>
+                  <TouchableOpacity
+                    style={styles.checkbox}
+                    onPress={() => setPromotionSendNotif(!promotionSendNotif)}
+                  >
+                    <Ionicons
+                      name={promotionSendNotif ? 'checkbox' : 'checkbox-outline'}
+                      size={24}
+                      color={promotionSendNotif ? COLORS.primary : COLORS.textMuted}
+                    />
+                  </TouchableOpacity>
+                  <Text style={styles.checkboxLabel}>Send notification to all users</Text>
+                </View>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.cancelBtn}
+                    onPress={() => setPromotionModal(false)}
+                    disabled={promotionLoading}
+                  >
+                    <Text style={styles.cancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.applyBtn, promotionLoading && styles.disabledBtn]}
+                    onPress={applyPromotion}
+                    disabled={promotionLoading}
+                  >
+                    {promotionLoading ? (
+                      <ActivityIndicator color={COLORS.background} size="small" />
+                    ) : (
+                      <Text style={styles.applyBtnText}>Apply Promotion</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -269,7 +407,8 @@ const styles = StyleSheet.create({
   discountText: { color: COLORS.error, fontSize: 10, fontWeight: '700' },
   stockIndicator: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
   stockText: { color: COLORS.success, fontSize: 11, fontWeight: '600' },
-  actionButtons: { justifyContent: 'space-around', paddingRight: 12, gap: 8 },
+  actionButtons: { justifyContent: 'space-around', paddingRight: 12, gap: 6 },
+  promoteBtn: { padding: 8, borderRadius: 8, backgroundColor: COLORS.warning + '20' },
   editBtn: { padding: 8, borderRadius: 8, backgroundColor: COLORS.primary + '20' },
   deleteBtn: { padding: 8, borderRadius: 8, backgroundColor: COLORS.error + '20' },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
@@ -285,4 +424,124 @@ const styles = StyleSheet.create({
   summaryItem: { flex: 1, alignItems: 'center' },
   summaryLabel: { color: COLORS.textMuted, fontSize: 11, fontWeight: '600' },
   summaryValue: { color: COLORS.primary, fontSize: 18, fontWeight: '800', marginTop: 4 },
+
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    color: COLORS.text,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  productPreview: {
+    backgroundColor: COLORS.background,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  previewLabel: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  previewValue: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  formGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: COLORS.text,
+    fontSize: 14,
+  },
+  helperText: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    marginTop: 8,
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxLabel: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+  },
+  cancelBtnText: {
+    color: COLORS.text,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  applyBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+  },
+  applyBtnText: {
+    color: COLORS.background,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  disabledBtn: {
+    opacity: 0.5,
+  },
 });

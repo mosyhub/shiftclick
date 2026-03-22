@@ -22,19 +22,37 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "package": "com.shiftclick.frontend",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS"
+      ],
+      "usesCleartextTraffic": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "@react-native-firebase/app",
-      "@react-native-firebase/messaging"
+      [
+        "@react-native-firebase/app"
+      ],
+      [
+        "@react-native-firebase/messaging"
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.YOUR_WEB_CLIENT_ID"
+        }
+      ]
     ],
     "extra": {
       "eas": {
         "projectId": "c81338ac-659f-46dc-9ac2-a3358eae9dfd"
       }
+    },
+    "scheme": "myapp",
+    "developmentClient": {
+      "silentLaunchAndroidActivity": true
     }
   }
 }

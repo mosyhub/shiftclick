@@ -7,7 +7,6 @@ import { useSelector } from 'react-redux';
 import { COLORS } from '../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/api';
-import { triggerLocalPromo } from '../utils/notifications';
 
 export default function AdminDashboard({ navigation }) {
   const { user, loading } = useSelector((s) => s.auth);
@@ -19,6 +18,17 @@ export default function AdminDashboard({ navigation }) {
     // No redirects needed — DrawerNavigator already restricts access to admin only
     loadDashboardStats();
   }, [user, loading]);
+
+  // Set header right button
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={() => navigation.toggleDrawer()} style={{ marginRight: 16 }}>
+          <Ionicons name="menu" size={24} color={COLORS.primary} />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
 
   const loadDashboardStats = async () => {
     try {
@@ -69,43 +79,31 @@ export default function AdminDashboard({ navigation }) {
           <Text style={styles.greeting}>Welcome back,</Text>
           <Text style={styles.adminName}>{user?.name} 👨‍💼</Text>
         </View>
-        <Ionicons name="shield-checkmark" size={40} color={COLORS.primary} />
       </View>
 
       <View style={styles.statsContainer}>
-        <StatCard icon="people" label="Total Users" value={stats.users} color="#3B82F6" onPress={() => navigation.navigate('AdminUsers')} />
-        <StatCard icon="cube" label="Products" value={stats.products} color="#10B981" onPress={() => navigation.navigate('AdminProducts')} />
-        <StatCard icon="receipt" label="Orders" value={stats.orders} color="#F59E0B" onPress={() => navigation.navigate('AdminOrders')} />
-        <StatCard icon="star" label="Reviews" value={stats.reviews} color="#8B5CF6" onPress={() => navigation.navigate('AdminReviews')} />
+        <StatCard icon="people" label="Total Users" value={stats.users} color="#3B82F6" onPress={() => navigation.navigate('AdminStackNavigator', { screen: 'AdminUsers' })} />
+        <StatCard icon="cube" label="Products" value={stats.products} color="#10B981" onPress={() => navigation.navigate('AdminStackNavigator', { screen: 'AdminProducts' })} />
+        <StatCard icon="receipt" label="Orders" value={stats.orders} color="#F59E0B" onPress={() => navigation.navigate('AdminStackNavigator', { screen: 'AdminOrders' })} />
+        <StatCard icon="star" label="Reviews" value={stats.reviews} color="#8B5CF6" onPress={() => navigation.navigate('AdminStackNavigator', { screen: 'AdminReviews' })} />
       </View>
-
-      <TouchableOpacity
-        style={styles.promoTestBtn}
-        onPress={() => triggerLocalPromo(
-          "Shift & Click: SALE! SALE! ⌨️",
-          "Our Gears are on sale! Tap to view code.",
-        )}
-      >
-        <Ionicons name="megaphone-outline" size={20} color="#fff" />
-        <Text style={styles.promoTestText}>Promo Notification</Text>
-      </TouchableOpacity>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionGrid}>
-          <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('ProductForm', { product: null })}>
+          <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('AdminStackNavigator', { screen: 'ProductForm', params: { product: null } })}>
             <Ionicons name="add-circle" size={32} color={COLORS.primary} />
             <Text style={styles.actionLabel}>Add Product</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('AdminProducts')}>
+          <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('AdminStackNavigator', { screen: 'AdminProducts' })}>
             <Ionicons name="list" size={32} color={COLORS.primary} />
             <Text style={styles.actionLabel}>Manage Products</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('AdminOrders')}>
+          <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('AdminStackNavigator', { screen: 'AdminOrders' })}>
             <Ionicons name="receipt" size={32} color={COLORS.primary} />
             <Text style={styles.actionLabel}>Manage Orders</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('AdminUsers')}>
+          <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('AdminStackNavigator', { screen: 'AdminUsers' })}>
             <Ionicons name="people" size={32} color={COLORS.primary} />
             <Text style={styles.actionLabel}>Manage Users</Text>
           </TouchableOpacity>
@@ -144,20 +142,4 @@ const styles = StyleSheet.create({
   infoBox: { flexDirection: 'row', backgroundColor: COLORS.primary + '15', borderRadius: 12, padding: 16, alignItems: 'center', gap: 12, marginBottom: 24, borderLeftWidth: 4, borderLeftColor: COLORS.primary },
   infoTitle: { color: COLORS.primary, fontSize: 13, fontWeight: '700' },
   infoText: { color: COLORS.textMuted, fontSize: 12, marginTop: 2 },
-  promoTestBtn: {
-    backgroundColor: '#7B61FF', 
-    margin: 15,
-    padding: 18,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    elevation: 4,
-  },
-  promoTestText: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: 15,
-  },
 });

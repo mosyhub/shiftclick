@@ -3,25 +3,20 @@ import {
   View, Text, ScrollView, StyleSheet,
   ActivityIndicator, Alert, TouchableOpacity, TextInput,
 } from 'react-native';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { fetchOrderById, updateOrderStatusThunk } from '../redux/slices/orderSlice';
+import { createReview, updateReviewThunk } from '../redux/slices/reviewSlice';
 import { COLORS } from '../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/api';
 
 const STATUS_COLORS = {
-  Pending: '#FFB800',
-  Processing: '#7B61FF',
-  Shipped: '#3B82F6',
-  Delivered: '#00FF88',
-  Cancelled: '#FF3C3C',
+  Pending: '#FFB800', Processing: '#7B61FF',
+  Shipped: '#3B82F6', Delivered: '#00FF88', Cancelled: '#FF3C3C',
 };
-
 const STATUS_ICONS = {
-  Pending: 'time-outline',
-  Processing: 'construct-outline',
-  Shipped: 'bicycle-outline',
-  Delivered: 'checkmark-circle-outline',
-  Cancelled: 'close-circle-outline',
+  Pending: 'time-outline', Processing: 'construct-outline',
+  Shipped: 'bicycle-outline', Delivered: 'checkmark-circle-outline', Cancelled: 'close-circle-outline',
 };
 
 function StarRow({ rating, onPress, size = 28 }) {
@@ -29,11 +24,7 @@ function StarRow({ rating, onPress, size = 28 }) {
     <View style={{ flexDirection: 'row', gap: 4 }}>
       {[1, 2, 3, 4, 5].map((s) => (
         <TouchableOpacity key={s} onPress={() => onPress && onPress(s)} disabled={!onPress}>
-          <Ionicons
-            name={s <= rating ? 'star' : 'star-outline'}
-            size={size}
-            color={s <= rating ? '#FFB800' : COLORS.textMuted}
-          />
+          <Ionicons name={s <= rating ? 'star' : 'star-outline'} size={size} color={s <= rating ? '#FFB800' : COLORS.textMuted} />
         </TouchableOpacity>
       ))}
     </View>
@@ -42,33 +33,23 @@ function StarRow({ rating, onPress, size = 28 }) {
 
 export default function OrderDetailScreen({ route, navigation }) {
   const { orderId } = route.params;
+  const dispatch = useDispatch();
   const { user } = useSelector((s) => s.auth);
-  const [order, setOrder] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState(false);
+  // ✅ Redux — order from store
+  const { selectedOrder: order, loading } = useSelector((s) => s.orders);
 
-  // Review state keyed by productId
   const [reviewStatuses, setReviewStatuses] = useState({});
   const [activeReviewProductId, setActiveReviewProductId] = useState(null);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewTitle, setReviewTitle] = useState('');
   const [reviewComment, setReviewComment] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [updating, setUpdating] = useState(false);
 
-  useEffect(() => { fetchOrder(); }, [orderId]);
-
-  const fetchOrder = async () => {
-    try {
-      setLoading(true);
-      const { data } = await api.get(`/orders/${orderId}`);
-      setOrder(data);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to fetch order details');
-      navigation.goBack();
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    // ✅ Redux dispatch instead of direct api.get()
+    dispatch(fetchOrderById(orderId));
+  }, [orderId]);
 
   useEffect(() => {
     if (order?.status === 'Delivered' && user?.role !== 'admin') {
@@ -78,18 +59,16 @@ export default function OrderDetailScreen({ route, navigation }) {
 
   const checkReviewStatuses = async (items) => {
     const statuses = {};
-    await Promise.all(
-      items.map(async (item) => {
-        const productId = item.product?._id || item.product;
-        if (!productId) return;
-        try {
-          const { data } = await api.get(`/reviews/my/${productId}`);
-          statuses[productId] = { reviewed: !!data, reviewData: data || null };
-        } catch {
-          statuses[productId] = { reviewed: false, reviewData: null };
-        }
-      })
-    );
+    await Promise.all(items.map(async (item) => {
+      const productId = item.product?._id || item.product;
+      if (!productId) return;
+      try {
+        const { data } = await api.get(`/reviews/my/${productId}`);
+        statuses[productId] = { reviewed: !!data, reviewData: data || null };
+      } catch {
+        statuses[productId] = { reviewed: false, reviewData: null };
+      }
+    }));
     setReviewStatuses(statuses);
   };
 
@@ -109,20 +88,24 @@ export default function OrderDetailScreen({ route, navigation }) {
     try {
       setSubmittingReview(true);
       if (existing) {
-        await api.put(`/reviews/${existing._id}`, {
-          rating: reviewRating, title: reviewTitle, comment: reviewComment,
-        });
+        // ✅ Redux dispatch for update review
+        await dispatch(updateReviewThunk({
+          id: existing._id,
+          reviewData: { rating: reviewRating, title: reviewTitle, comment: reviewComment },
+        })).unwrap();
         Alert.alert('Updated ✅', 'Your review has been updated.');
       } else {
-        await api.post('/reviews', {
-          productId, orderId, rating: reviewRating, title: reviewTitle, comment: reviewComment,
-        });
+        // ✅ Redux dispatch for create review
+        await dispatch(createReview({
+          productId, orderId,
+          rating: reviewRating, title: reviewTitle, comment: reviewComment,
+        })).unwrap();
         Alert.alert('Submitted ✅', 'Your review has been posted!');
       }
       setActiveReviewProductId(null);
       checkReviewStatuses(order.items);
     } catch (error) {
-      Alert.alert('Error', error.response?.data?.message || 'Failed to submit review.');
+      Alert.alert('Error', error || 'Failed to submit review.');
     } finally {
       setSubmittingReview(false);
     }
@@ -135,14 +118,15 @@ export default function OrderDetailScreen({ route, navigation }) {
         text: 'Update', onPress: async () => {
           try {
             setUpdating(true);
-            const { data } = await api.put(`/orders/${orderId}/status`, {
+            // ✅ Redux dispatch for update status
+            await dispatch(updateOrderStatusThunk({
+              id: orderId,
               status: newStatus,
               note: `Status updated to ${newStatus} by admin`,
-            });
-            setOrder(data);
+            })).unwrap();
             Alert.alert('Updated ✅', `Order is now ${newStatus}`);
           } catch (error) {
-            Alert.alert('Error', error.response?.data?.message || 'Failed to update status');
+            Alert.alert('Error', error || 'Failed to update status');
           } finally {
             setUpdating(false);
           }
@@ -155,19 +139,18 @@ export default function OrderDetailScreen({ route, navigation }) {
     Alert.alert('Confirm Receipt', 'Have you received your order?', [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Yes, Received',
-        onPress: async () => {
+        text: 'Yes, Received', onPress: async () => {
           try {
             setUpdating(true);
-            const { data } = await api.put(`/orders/${orderId}/status`, {
+            // ✅ Redux dispatch
+            await dispatch(updateOrderStatusThunk({
+              id: orderId,
               status: 'Delivered',
               note: 'Order confirmed received by customer',
-              ...(order.paymentMethod === 'COD' && { paymentStatus: 'Paid' }),
-            });
-            setOrder(data);
+            })).unwrap();
             Alert.alert('Thank you! 🎉', 'Your order has been marked as received.');
           } catch (error) {
-            Alert.alert('Error', error.response?.data?.message || 'Failed to update');
+            Alert.alert('Error', error || 'Failed to update');
           } finally {
             setUpdating(false);
           }
@@ -176,11 +159,9 @@ export default function OrderDetailScreen({ route, navigation }) {
     ]);
   };
 
-  if (loading) {
+  if (loading || !order) {
     return <View style={styles.centered}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
   }
-
-  if (!order) return null;
 
   const isDelivered = order.status === 'Delivered';
   const isCustomer = user?.role !== 'admin';
@@ -201,7 +182,7 @@ export default function OrderDetailScreen({ route, navigation }) {
         </View>
       </View>
 
-      {/* Admin: Processing or Shipped */}
+      {/* Admin status update */}
       {user?.role === 'admin' && !['Delivered', 'Cancelled'].includes(order.status) && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Update Status</Text>
@@ -274,49 +255,24 @@ export default function OrderDetailScreen({ route, navigation }) {
                 </View>
               </View>
 
-              {/* Inline review form */}
               {isActiveForm && (
                 <View style={styles.reviewForm}>
-                  <Text style={styles.reviewFormTitle}>
-                    {status?.reviewed ? 'Edit Your Review' : 'Write a Review'}
-                  </Text>
+                  <Text style={styles.reviewFormTitle}>{status?.reviewed ? 'Edit Your Review' : 'Write a Review'}</Text>
                   <Text style={styles.formLabel}>Rating</Text>
                   <StarRow rating={reviewRating} onPress={setReviewRating} size={30} />
-
                   <Text style={[styles.formLabel, { marginTop: 12 }]}>Title (optional)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Summarize your experience"
-                    placeholderTextColor={COLORS.textMuted}
-                    value={reviewTitle}
-                    onChangeText={setReviewTitle}
-                    maxLength={80}
-                  />
-
+                  <TextInput style={styles.input} placeholder="Summarize your experience" placeholderTextColor={COLORS.textMuted} value={reviewTitle} onChangeText={setReviewTitle} maxLength={80} />
                   <Text style={styles.formLabel}>Comment</Text>
-                  <TextInput
-                    style={[styles.input, styles.commentInput]}
-                    placeholder="Share your experience with this product..."
-                    placeholderTextColor={COLORS.textMuted}
-                    value={reviewComment}
-                    onChangeText={setReviewComment}
-                    multiline
-                    maxLength={500}
-                  />
+                  <TextInput style={[styles.input, styles.commentInput]} placeholder="Share your experience..." placeholderTextColor={COLORS.textMuted} value={reviewComment} onChangeText={setReviewComment} multiline maxLength={500} />
                   <Text style={styles.charCount}>{reviewComment.length}/500</Text>
-
                   <TouchableOpacity style={styles.submitReviewBtn} onPress={handleSubmitReview} disabled={submittingReview}>
-                    {submittingReview
-                      ? <ActivityIndicator color={COLORS.background} />
-                      : <Text style={styles.submitReviewBtnText}>{status?.reviewed ? 'Update Review' : 'Submit Review'}</Text>
-                    }
+                    {submittingReview ? <ActivityIndicator color={COLORS.background} /> : <Text style={styles.submitReviewBtnText}>{status?.reviewed ? 'Update Review' : 'Submit Review'}</Text>}
                   </TouchableOpacity>
                 </View>
               )}
             </View>
           );
         })}
-
         {isCustomer && isDelivered && (
           <Text style={styles.reviewPrompt}>⭐ Tap "Review" next to each item to share your experience!</Text>
         )}

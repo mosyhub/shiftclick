@@ -1,13 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Alert, RefreshControl,
+  StyleSheet, ActivityIndicator, RefreshControl,
 } from 'react-native';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { fetchMyOrders } from '../redux/slices/orderSlice';
 import { COLORS } from '../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
-import api from '../api/api';
-import { useNavigation, DrawerActions } from '@react-navigation/native';
+import { DrawerActions } from '@react-navigation/native';
 
 const STATUS_COLORS = {
   Pending: '#FFB800',
@@ -18,42 +18,23 @@ const STATUS_COLORS = {
 };
 
 export default function OrdersScreen({ navigation }) {
+  const dispatch = useDispatch();
   const { user } = useSelector((s) => s.auth);
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  // ✅ Redux — orders from store instead of local useState
+  const { items: orders, loading } = useSelector((s) => s.orders);
 
   useEffect(() => {
-    if (!user) {
-      navigation.navigate('Login');
-      return;
-    }
-    // Set header with drawer button
+    if (!user) { navigation.navigate('Login'); return; }
     navigation.setOptions({
       headerLeft: () => (
-        <TouchableOpacity
-          style={{ marginLeft: 14 }}
-          onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
-        >
+        <TouchableOpacity style={{ marginLeft: 14 }} onPress={() => navigation.dispatch(DrawerActions.openDrawer())}>
           <Ionicons name="menu" size={26} color={COLORS.text} />
         </TouchableOpacity>
       ),
     });
-    fetchOrders();
+    // ✅ Redux dispatch instead of direct api.get()
+    dispatch(fetchMyOrders());
   }, [user]);
-
-  const fetchOrders = async () => {
-    try {
-      setLoading(true);
-      const { data } = await api.get('/orders/my');
-      setOrders(data);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to fetch orders');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
 
   const renderOrder = ({ item }) => (
     <TouchableOpacity
@@ -74,12 +55,8 @@ export default function OrdersScreen({ navigation }) {
     </TouchableOpacity>
   );
 
-  if (loading && !refreshing) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
+  if (loading) {
+    return <View style={styles.centered}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
   }
 
   return (
@@ -89,7 +66,14 @@ export default function OrdersScreen({ navigation }) {
         renderItem={renderOrder}
         keyExtractor={(item) => item._id}
         contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchOrders(); }} tintColor={COLORS.primary} />}
+        // ✅ Redux dispatch on refresh
+        refreshControl={
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={() => dispatch(fetchMyOrders())}
+            tintColor={COLORS.primary}
+          />
+        }
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="receipt-outline" size={60} color={COLORS.textMuted} />

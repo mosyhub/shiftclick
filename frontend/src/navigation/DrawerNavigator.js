@@ -56,23 +56,27 @@ function CustomDrawerContent(props) {
         <DrawerItemList {...props} />
       </View>
 
-      {/* Cart Button */}
-      <TouchableOpacity style={styles.cartBtn} onPress={() => props.navigation.navigate('Cart')}>
-        <View>
-          <Ionicons name="cart-outline" size={22} color={COLORS.textSecondary} />
-          {cartItems.length > 0 && (
-            <View style={styles.cartBadge}>
-              <Text style={styles.cartBadgeText}>{cartItems.length}</Text>
+      {/* Cart Button - Only show when logged in */}
+      {user && (
+        <>
+          <TouchableOpacity style={styles.cartBtn} onPress={() => props.navigation.navigate('Cart')}>
+            <View>
+              <Ionicons name="cart-outline" size={22} color={COLORS.textSecondary} />
+              {cartItems.length > 0 && (
+                <View style={styles.cartBadge}>
+                  <Text style={styles.cartBadgeText}>{cartItems.length}</Text>
+                </View>
+              )}
             </View>
-          )}
-        </View>
-        <Text style={styles.cartBtnText}>Cart</Text>
-        {cartItems.length > 0 && (
-          <Text style={styles.cartCount}>{cartItems.length} item{cartItems.length > 1 ? 's' : ''}</Text>
-        )}
-      </TouchableOpacity>
+            <Text style={styles.cartBtnText}>Cart</Text>
+            {cartItems.length > 0 && (
+              <Text style={styles.cartCount}>{cartItems.length} item{cartItems.length > 1 ? 's' : ''}</Text>
+            )}
+          </TouchableOpacity>
 
-      <View style={styles.divider} />
+          <View style={styles.divider} />
+        </>
+      )}
 
       {/* Logout / Login */}
       {user ? (
@@ -117,11 +121,13 @@ export default function DrawerNavigator() {
         component={ProductStack}
         options={{ headerShown: false, title: 'Products', drawerIcon: ({ color }) => <Ionicons name="storefront-outline" size={22} color={color} /> }}
       />
-      <Drawer.Screen
-        name="Notifications"
-        component={NotificationsScreen}
-        options={{ title: 'Notifications', drawerIcon: ({ color }) => <Ionicons name="notifications-outline" size={22} color={color} /> }}
-      />
+      {user && (
+        <Drawer.Screen
+          name="Notifications"
+          component={NotificationsScreen}
+          options={{ title: 'Notifications', drawerIcon: ({ color }) => <Ionicons name="notifications-outline" size={22} color={color} /> }}
+        />
+      )}
       {user && (
         <>
           <Drawer.Screen
@@ -148,13 +154,11 @@ export default function DrawerNavigator() {
           options={{ headerShown: false, title: 'Admin Panel', drawerIcon: ({ color }) => <Ionicons name="shield-checkmark-outline" size={22} color={color} /> }}
         />
       )}
-      {!user && (
-        <Drawer.Screen
-          name="Login"
-          component={AuthStack}
-          options={{ headerShown: false, title: 'Login / Register', drawerIcon: ({ color }) => <Ionicons name="log-in-outline" size={22} color={color} /> }}
-        />
-      )}
+      <Drawer.Screen
+        name="Login"
+        component={AuthStack}
+        options={{ headerShown: false, title: 'Login / Register', drawerItemStyle: { display: 'none' } }}
+      />
       <Drawer.Screen
         name="Cart"
         component={CartScreen}

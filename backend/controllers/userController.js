@@ -51,24 +51,104 @@ const registerUser = async (req, res) => {
 const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log('🔐 Login attempt for email:', email);
 
     if (!email || !password) {
+      console.log('❌ Missing email or password');
       return res.status(400).json({ message: 'Please enter email and password' });
     }
 
     const user = await User.findOne({ email });
+    console.log('👤 User found:', user ? 'YES' : 'NO');
+    
     if (!user) {
+      console.log('❌ User not found for email:', email);
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
-    if (user.authProvider !== 'local') {
-      return res.status(401).json({ message: `Please login with ${user.authProvider}` });
+    // Check if user account is active
+    if (!user.isActive) {
+      console.log('❌ User account is deactivated:', email);
+      return res.status(403).json({ message: 'Your account has been deactivated. Please contact support.' });
     }
 
+    console.log('🔑 Auth Provider:', user.authProvider);
+    console.log('🔐 User has password:', user.password ? 'YES' : 'NO');
+
+    // Check if user has a password set
+    if (!user.password) {
+      console.log('❌ User has no password set (Google-only account)');
+      return res.status(401).json({ message: `Please login with ${user.authProvider || 'Google'}` });
+    }
+
+    // Allow login if user has a password, regardless of authProvider
     const isMatch = await user.matchPassword(password);
+    console.log('🔐 Password match:', isMatch ? 'YES' : 'NO');
+    
     if (!isMatch) {
+      console.log('❌ Password mismatch for user:', email);
       return res.status(401).json({ message: 'Invalid email or password' });
     }
+
+    console.log('✅ Login successful for:', email);
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      avatar: user.avatar,
+      phone: user.phone,
+      address: user.address,
+      token: generateToken(user._id),
+    });
+  } catch (error) {
+    console.error('❌ Login Error (Exception):', error.message, error.stack);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Google Sign-In
+// @route   POST /api/users/google-signin
+// @access  Public
+const googleSignIn = async (req, res) => {
+  try {
+    const { email, name, googleIdToken } = req.body;
+
+    if (!email || !googleIdToken) {
+      return res.status(400).json({ message: 'Email and Google ID Token required' });
+    }
+
+    // Check if user exists
+    let user = await User.findOne({ email });
+
+    if (user) {
+      // Check if user account is active
+      if (!user.isActive) {
+        return res.status(403).json({ message: 'Your account has been deactivated. Please contact support.' });
+      }
+
+      // User exists - allow login if they have local or google auth
+      // Don't force users with local accounts to use only Google
+      if (user.authProvider !== 'google' && user.authProvider !== 'local') {
+        return res.status(401).json({ message: `Please login with ${user.authProvider}` });
+      }
+      // IMPORTANT: Do NOT change authProvider - allow users to use both methods
+      // Only update Google ID token if they didn't have one
+      if (!user.googleIdToken && user.authProvider !== 'google') {
+        user.googleIdToken = googleIdToken;
+      }
+    } else {
+      // Create new user with Google auth
+      user = await User.create({
+        name: name || email.split('@')[0],
+        email,
+        authProvider: 'google',
+        googleIdToken,
+      });
+    }
+
+    await user.save();
+    console.log('✅ Google Sign-In successful for:', email);
 
     res.json({
       _id: user._id,
@@ -81,7 +161,8 @@ const loginUser = async (req, res) => {
       token: generateToken(user._id),
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('❌ Google Sign-In Error:', error);
+    res.status(400).json({ message: error.message });
   }
 };
 
@@ -207,13 +288,42 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+// @desc    Deactivate/Activate user account (admin)
+// @route   PUT /api/users/:userId/toggle-status
+// @access  Admin
+const toggleUserStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Toggle the isActive status
+    user.isActive = !user.isActive;
+    await user.save();
+
+    res.json({
+      message: user.isActive ? 'User account activated' : 'User account deactivated',
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      isActive: user.isActive,
+      role: user.role,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
+  googleSignIn,
   getMyProfile,
   updateProfile,
   updatePassword,
   savePushToken,
   removePushToken,
   getAllUsers,
+  toggleUserStatus,
 };

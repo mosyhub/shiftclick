@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const admin = require('./config/firebase'); // Initialize Firebase
 
 dotenv.config();
 

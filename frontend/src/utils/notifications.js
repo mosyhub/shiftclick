@@ -1,6 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import api from '../api/api';
 import Constants from 'expo-constants';
 
@@ -13,53 +13,79 @@ Notifications.setNotificationHandler({
 });
 
 export const registerForPushNotifications = async () => {
-  if (!Device.isDevice) {
-    console.log('Must use physical device for Push Notifications');
-    return null;
-  }
-  
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-
-  if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-
-  if (finalStatus !== 'granted') {
-    console.log('Push notification permission denied');
-    return null;
-  }
-
   try {
-    const projectId = Constants?.expoConfig?.extra?.eas?.projectId || 
-                      Constants?.easConfig?.projectId;
+    // Check if it's a physical device
+    if (!Device.isDevice) {
+      console.log('⚠️  Must use physical device for Push Notifications');
+      return null;
+    }
+    
+    // Request permissions
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
 
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== 'granted') {
+      console.log('⚠️  Push notification permission denied');
+      Alert.alert('Permission Denied', 'Enable notifications to receive updates', [{ text: 'OK' }]);
+      return null;
+    }
+
+    // Get project ID from app.json or eas.json
+    const projectId = 
+      Constants?.expoConfig?.extra?.eas?.projectId || 
+      Constants?.easConfig?.projectId ||
+      'c81338ac-659f-46dc-9ac2-a3358eae9dfd'; // Fallback to your project ID
+
+    console.log('📱 Getting expo push token for project:', projectId);
+
+    // Get Expo push token
     const tokenData = await Notifications.getExpoPushTokenAsync({
       projectId: projectId, 
     });
-    const token = tokenData.data;
-
-    // I-save ang token sa backend
-    await api.post('/users/push-token', { 
-      token, 
-      device: `${Device.brand} ${Device.modelName} (${Platform.OS})` 
-    });
     
-    console.log('✅ Push token saved to DB:', token);
+    const token = tokenData.data;
+    console.log('✅ Expo Push Token:', token);
 
+    // Get device info
+    const deviceInfo = `${Device.brand || 'Unknown'} ${Device.modelName || 'Device'} (${Platform.OS})`;
+
+    // Save token to backend
+    try {
+      const response = await api.post('/notifications/save-token', { 
+        token, 
+        device: deviceInfo
+      });
+      console.log('✅ Push token saved to backend:', response.data);
+    } catch (error) {
+      console.error('❌ Error saving push token to backend:', error.response?.data || error.message);
+      // Don't return null - token is still valid, just wasn't saved to DB
+    }
+
+    // Setup Android notification channel
     if (Platform.OS === 'android') {
-      Notifications.setNotificationChannelAsync('default', {
+      await Notifications.setNotificationChannelAsync('default', {
         name: 'default',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#FF231F7C',
+        bypassDnd: true,
       });
+      console.log('✅ Android notification channel created');
     }
 
     return token;
   } catch (error) {
-    console.error('❌ Failed to register or save push token:', error.message);
+    console.error('❌ Error in registerForPushNotifications:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+    });
     return null;
   }
 };
@@ -79,7 +105,11 @@ export const triggerLocalPromo = async (title, body, promoId) => {
         },
         sound: 'default',
       },
-      trigger: null, 
+      trigger: {
+        type: 'timeInterval',
+        seconds: 2,
+        channelId: 'default',
+      },
     });
     console.log('✅ Local notification triggered!');
   } catch (error) {
@@ -88,36 +118,72 @@ export const triggerLocalPromo = async (title, body, promoId) => {
 };
 
 export const setupNotificationListeners = (navigation) => {
+  console.log('🔔 Setting up notification listeners...');
+  
+  // Log when listeners are set up
+  console.log('📱 Notification listeners initializing for navigation:', !!navigation);
+  
+  // Handle notification when app is in foreground
+  const notificationSubscription = Notifications.addNotificationReceivedListener(notification => {
+    const title = notification.request.content.title;
+    const body = notification.request.content.body;
+    const data = notification.request.content.data;
+    
+    console.log('🔔 ===== FOREGROUND NOTIFICATION RECEIVED =====');
+    console.log('Title:', title);
+    console.log('Body:', body);
+    console.log('Data:', data);
+    console.log('=========================================');
+    
+    // Show alert in foreground so user knows they got a notification
+    Alert.alert(
+      title || 'Notification',
+      body || 'You have a new message',
+      [
+        {
+          text: 'View',
+          onPress: () => {
+            if (data?.orderId) {
+              navigation.navigate('Orders', { 
+                screen: 'OrderDetail', 
+                params: { orderId: data.orderId } 
+              });
+            }
+          },
+        },
+        {
+          text: 'Dismiss',
+          onPress: () => console.log('Notification dismissed'),
+        },
+      ],
+      { cancelable: true }
+    );
+  });
+
+  // Handle notification when user taps it (background or foreground)
   const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
     const data = response.notification.request.content.data;
     const title = response.notification.request.content.title;
     const body = response.notification.request.content.body;
     
-    console.log('Notification Tapped. Data:', data);
+    console.log('🔔 TAPPED Notification:', { title, body, data });
 
-    // 1. Term Test: View Order Details
     if (data?.orderId) {
-      navigation.navigate('OrderDetail', { orderId: data.orderId });
-    }
-
-    // 2. Quiz 2: View Promotion Details
-    else if (data?.screen === 'PromoDetail' || data?.promoId) {
-      navigation.navigate('Home', { 
-        promoId: data.promoId, 
-        title: data.title || title,
-        body: data.body || body 
+      console.log('📦 Navigating to order:', data.orderId);
+      navigation.navigate('Orders', { 
+        screen: 'OrderDetail', 
+        params: { orderId: data.orderId } 
       });
     }
   });
 
-  const notificationSubscription = Notifications.addNotificationReceivedListener(notification => {
-    console.log('Notification received in foreground:', notification.request.content.title);
-  });
+  console.log('✅ Notification listeners attached');
   
   return {
     remove: () => {
       responseSubscription.remove();
       notificationSubscription.remove();
+      console.log('🔔 Notification listeners removed');
     }
   };
 };

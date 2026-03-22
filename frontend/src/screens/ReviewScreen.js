@@ -3,9 +3,16 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ActivityIndicator, Alert, ScrollView, Image, FlatList,
 } from 'react-native';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
+import {
+  fetchProductReviews,
+  fetchMyReviews,
+  createReview,
+  updateReviewThunk,
+  checkCanReview,
+} from '../redux/slices/reviewSlice';
 import api from '../api/api';
 
 const SORT_OPTIONS = [
@@ -20,11 +27,7 @@ function StarRow({ rating, onPress, size = 28, color = '#FFB800' }) {
     <View style={{ flexDirection: 'row', gap: 4 }}>
       {[1, 2, 3, 4, 5].map((s) => (
         <TouchableOpacity key={s} onPress={() => onPress && onPress(s)} disabled={!onPress}>
-          <Ionicons
-            name={s <= rating ? 'star' : 'star-outline'}
-            size={size}
-            color={s <= rating ? color : COLORS.textMuted}
-          />
+          <Ionicons name={s <= rating ? 'star' : 'star-outline'} size={size} color={s <= rating ? color : COLORS.textMuted} />
         </TouchableOpacity>
       ))}
     </View>
@@ -47,9 +50,7 @@ function RatingSummary({ summary }) {
             <View key={star} style={styles.barRow}>
               <Text style={styles.barLabel}>{star}</Text>
               <Ionicons name="star" size={11} color="#FFB800" />
-              <View style={styles.barTrack}>
-                <View style={[styles.barFill, { width: `${pct}%` }]} />
-              </View>
+              <View style={styles.barTrack}><View style={[styles.barFill, { width: `${pct}%` }]} /></View>
               <Text style={styles.barCount}>{count}</Text>
             </View>
           );
@@ -74,14 +75,11 @@ function ReviewCard({ review, isOwn, onEdit, displayOnly }) {
           )}
           <View>
             <Text style={styles.reviewerName}>{review.user?.name || 'Anonymous'}</Text>
-            <Text style={styles.reviewDate}>
-              {new Date(review.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
-            </Text>
+            <Text style={styles.reviewDate}>{new Date(review.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
           </View>
         </View>
         <View style={styles.reviewHeaderRight}>
           <StarRow rating={review.rating} size={14} />
-          {/* Hide edit button when displayOnly */}
           {isOwn && !displayOnly && (
             <TouchableOpacity style={styles.editBtn} onPress={() => onEdit(review)}>
               <Ionicons name="pencil-outline" size={14} color={COLORS.primary} />
@@ -102,32 +100,22 @@ function ReviewCard({ review, isOwn, onEdit, displayOnly }) {
   );
 }
 
-// ─── Used as embedded component in ProductDetailScreen (displayOnly=true)
-//     and as standalone My Reviews drawer screen (no productId, displayOnly=false)
 export default function ReviewScreen({ productId, displayOnly = false }) {
+  const dispatch = useDispatch();
   const { user } = useSelector((s) => s.auth);
+  // ✅ Redux state
+  const { items: reviews, myReviews, summary, canReviewStatus, loading } = useSelector((s) => s.reviews);
 
-  // Product reviews mode (when productId is given)
-  const [reviews, setReviews] = useState([]);
-  const [summary, setSummary] = useState({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, total: 0, average: 0 });
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
   const [filterRating, setFilterRating] = useState(0);
   const [sortBy, setSortBy] = useState('newest');
-
-  // Write/edit form state
-  const [canReview, setCanReview] = useState(false);
-  const [orderId, setOrderId] = useState(null);
-  const [alreadyReviewed, setAlreadyReviewed] = useState(false);
-  const [editingReview, setEditingReview] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [editingReview, setEditingReview] = useState(null);
   const [rating, setRating] = useState(5);
   const [title, setTitle] = useState('');
   const [comment, setComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  // My Reviews mode (when no productId — drawer screen)
-  const [myReviews, setMyReviews] = useState([]);
-  const [myReviewsLoading, setMyReviewsLoading] = useState(true);
+  // My Reviews mode edit state
   const [editingMyReview, setEditingMyReview] = useState(null);
   const [editRating, setEditRating] = useState(5);
   const [editTitle, setEditTitle] = useState('');
@@ -135,52 +123,22 @@ export default function ReviewScreen({ productId, displayOnly = false }) {
   const [mySubmitting, setMySubmitting] = useState(false);
 
   const isMyReviewsMode = !productId;
+  const myUserId = user?._id || user?.id;
 
-  // My Reviews mode — runs once on mount
   useEffect(() => {
     if (isMyReviewsMode) {
-      fetchMyReviews();
+      // ✅ Redux dispatch
+      dispatch(fetchMyReviews());
     }
   }, []);
 
-  // Product reviews mode — runs when filters change
   useEffect(() => {
     if (!isMyReviewsMode) {
-      fetchReviews();
-      if (user && !displayOnly) checkCanReview();
+      // ✅ Redux dispatch
+      dispatch(fetchProductReviews({ productId, rating: filterRating || undefined, sort: sortBy }));
+      if (user && !displayOnly) dispatch(checkCanReview(productId));
     }
   }, [productId, filterRating, sortBy]);
-
-  // ── Product reviews fetch
-  const fetchReviews = async () => {
-    try {
-      setLoading(true);
-      const params = { sort: sortBy };
-      if (filterRating > 0) params.rating = filterRating;
-      const { data } = await api.get(`/reviews/product/${productId}`, { params });
-      setReviews(data.reviews);
-      setSummary(data.summary);
-    } catch (error) {
-      console.log('Fetch reviews error:', error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const checkCanReview = async () => {
-    try {
-      const { data } = await api.get(`/reviews/can-review/${productId}`);
-      setCanReview(data.canReview);
-      setOrderId(data.orderId);
-      setAlreadyReviewed(data.alreadyReviewed || false);
-      if (data.alreadyReviewed) {
-        const { data: myReview } = await api.get(`/reviews/my/${productId}`);
-        if (myReview) setEditingReview(myReview);
-      }
-    } catch (error) {
-      console.log('Can review check error:', error.message);
-    }
-  };
 
   const openEditForm = (review) => {
     setEditingReview(review);
@@ -192,9 +150,7 @@ export default function ReviewScreen({ productId, displayOnly = false }) {
 
   const openNewForm = () => {
     setEditingReview(null);
-    setRating(5);
-    setTitle('');
-    setComment('');
+    setRating(5); setTitle(''); setComment('');
     setShowForm(true);
   };
 
@@ -203,116 +159,70 @@ export default function ReviewScreen({ productId, displayOnly = false }) {
     try {
       setSubmitting(true);
       if (editingReview) {
-        await api.put(`/reviews/${editingReview._id}`, { rating, title, comment });
+        // ✅ Redux dispatch
+        await dispatch(updateReviewThunk({ id: editingReview._id, reviewData: { rating, title, comment } })).unwrap();
         Alert.alert('Updated ✅', 'Your review has been updated.');
       } else {
-        await api.post('/reviews', { productId, orderId, rating, title, comment });
+        // ✅ Redux dispatch
+        await dispatch(createReview({ productId, orderId: canReviewStatus?.orderId, rating, title, comment })).unwrap();
         Alert.alert('Submitted ✅', 'Your review has been posted!');
       }
       setShowForm(false);
-      fetchReviews();
-      checkCanReview();
+      dispatch(fetchProductReviews({ productId, rating: filterRating || undefined, sort: sortBy }));
+      dispatch(checkCanReview(productId));
     } catch (error) {
-      Alert.alert('Error', error.response?.data?.message || 'Failed to submit review.');
+      Alert.alert('Error', error || 'Failed to submit review.');
     } finally {
       setSubmitting(false);
     }
-  };
-
-  // ── My Reviews fetch
-  const fetchMyReviews = async () => {
-    try {
-      setMyReviewsLoading(true);
-      const { data } = await api.get('/reviews/my-all');
-      setMyReviews(data);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to load your reviews');
-    } finally {
-      setMyReviewsLoading(false);
-    }
-  };
-
-  const openMyReviewEdit = (review) => {
-    setEditingMyReview(review);
-    setEditRating(review.rating);
-    setEditTitle(review.title || '');
-    setEditComment(review.comment);
   };
 
   const handleMyReviewUpdate = async () => {
     if (!editComment.trim()) return Alert.alert('Missing', 'Please write a comment.');
     try {
       setMySubmitting(true);
-      await api.put(`/reviews/${editingMyReview._id}`, {
-        rating: editRating,
-        title: editTitle,
-        comment: editComment,
-      });
+      // ✅ Redux dispatch
+      await dispatch(updateReviewThunk({ id: editingMyReview._id, reviewData: { rating: editRating, title: editTitle, comment: editComment } })).unwrap();
       Alert.alert('Updated ✅', 'Your review has been updated.');
       setEditingMyReview(null);
-      fetchMyReviews();
+      dispatch(fetchMyReviews());
     } catch (error) {
-      Alert.alert('Error', error.response?.data?.message || 'Failed to update review.');
+      Alert.alert('Error', error || 'Failed to update review.');
     } finally {
       setMySubmitting(false);
     }
   };
 
-  const myUserId = user?._id || user?.id;
+  const canReview = canReviewStatus?.canReview;
+  const alreadyReviewed = canReviewStatus?.alreadyReviewed;
 
-  // ────────────────────────────────────────────
-  // MY REVIEWS MODE (drawer screen — no productId)
-  // ────────────────────────────────────────────
+  // ── MY REVIEWS MODE ──
   if (isMyReviewsMode) {
     if (editingMyReview) {
       return (
         <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
           <Text style={styles.sectionTitle}>Edit Review</Text>
           <Text style={styles.editProductName}>{editingMyReview.product?.name}</Text>
-
           <Text style={styles.formLabel}>Your Rating</Text>
           <StarRow rating={editRating} onPress={setEditRating} size={32} />
-
           <Text style={[styles.formLabel, { marginTop: 16 }]}>Title (optional)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Summarize your experience"
-            placeholderTextColor={COLORS.textMuted}
-            value={editTitle}
-            onChangeText={setEditTitle}
-            maxLength={80}
-          />
-
+          <TextInput style={styles.input} placeholder="Summarize your experience" placeholderTextColor={COLORS.textMuted} value={editTitle} onChangeText={setEditTitle} maxLength={80} />
           <Text style={styles.formLabel}>Comment</Text>
-          <TextInput
-            style={[styles.input, styles.commentInput]}
-            placeholder="Share your experience..."
-            placeholderTextColor={COLORS.textMuted}
-            value={editComment}
-            onChangeText={setEditComment}
-            multiline
-            maxLength={500}
-          />
+          <TextInput style={[styles.input, styles.commentInput]} placeholder="Share your experience..." placeholderTextColor={COLORS.textMuted} value={editComment} onChangeText={setEditComment} multiline maxLength={500} />
           <Text style={styles.charCount}>{editComment.length}/500</Text>
-
           <View style={styles.formActions}>
             <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditingMyReview(null)}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.submitBtn} onPress={handleMyReviewUpdate} disabled={mySubmitting}>
-              {mySubmitting
-                ? <ActivityIndicator color={COLORS.background} />
-                : <Text style={styles.submitBtnText}>Update</Text>
-              }
+              {mySubmitting ? <ActivityIndicator color={COLORS.background} /> : <Text style={styles.submitBtnText}>Update</Text>}
             </TouchableOpacity>
           </View>
         </ScrollView>
       );
     }
 
-    if (myReviewsLoading) {
-      return <View style={styles.centered}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
-    }
+    if (loading) return <View style={styles.centered}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
 
     return (
       <FlatList
@@ -320,9 +230,7 @@ export default function ReviewScreen({ productId, displayOnly = false }) {
         data={myReviews}
         keyExtractor={(item) => item._id}
         contentContainerStyle={{ padding: 12 }}
-        ListHeaderComponent={
-          <Text style={styles.countText}>{myReviews.length} review{myReviews.length !== 1 ? 's' : ''}</Text>
-        }
+        ListHeaderComponent={<Text style={styles.countText}>{myReviews.length} review{myReviews.length !== 1 ? 's' : ''}</Text>}
         renderItem={({ item }) => {
           const productImage = item.product?.images?.[0]?.url;
           return (
@@ -339,7 +247,7 @@ export default function ReviewScreen({ productId, displayOnly = false }) {
                   <Text style={styles.reviewerName} numberOfLines={1}>{item.product?.name || 'Unknown Product'}</Text>
                   <Text style={styles.reviewDate}>{new Date(item.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
                 </View>
-                <TouchableOpacity style={styles.editBtn} onPress={() => openMyReviewEdit(item)}>
+                <TouchableOpacity style={styles.editBtn} onPress={() => { setEditingMyReview(item); setEditRating(item.rating); setEditTitle(item.title || ''); setEditComment(item.comment); }}>
                   <Ionicons name="pencil-outline" size={14} color={COLORS.primary} />
                   <Text style={styles.editBtnText}>Edit</Text>
                 </TouchableOpacity>
@@ -361,121 +269,76 @@ export default function ReviewScreen({ productId, displayOnly = false }) {
     );
   }
 
-  // ────────────────────────────────────────────
-  // PRODUCT REVIEWS MODE (embedded in ProductDetailScreen)
-  // ────────────────────────────────────────────
+  // ── PRODUCT REVIEWS MODE ──
   return (
     <View style={styles.container}>
       <Text style={styles.sectionTitle}>Ratings & Reviews</Text>
+      {summary && summary.total > 0 && <RatingSummary summary={summary} />}
 
-      {summary.total > 0 && <RatingSummary summary={summary} />}
-
-      {/* Filter by stars */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={{ gap: 8, paddingHorizontal: 2 }}>
-        <TouchableOpacity
-          style={[styles.filterPill, filterRating === 0 && styles.filterPillActive]}
-          onPress={() => setFilterRating(0)}
-        >
+        <TouchableOpacity style={[styles.filterPill, filterRating === 0 && styles.filterPillActive]} onPress={() => setFilterRating(0)}>
           <Text style={[styles.filterPillText, filterRating === 0 && styles.filterPillTextActive]}>All</Text>
         </TouchableOpacity>
         {[5, 4, 3, 2, 1].map((s) => (
-          <TouchableOpacity
-            key={s}
-            style={[styles.filterPill, filterRating === s && styles.filterPillActive]}
-            onPress={() => setFilterRating(filterRating === s ? 0 : s)}
-          >
+          <TouchableOpacity key={s} style={[styles.filterPill, filterRating === s && styles.filterPillActive]} onPress={() => setFilterRating(filterRating === s ? 0 : s)}>
             <Ionicons name="star" size={12} color={filterRating === s ? '#fff' : '#FFB800'} />
             <Text style={[styles.filterPillText, filterRating === s && styles.filterPillTextActive]}>{s}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
 
-      {/* Sort */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={{ gap: 8, paddingHorizontal: 2 }}>
         {SORT_OPTIONS.map((opt) => (
-          <TouchableOpacity
-            key={opt.value}
-            style={[styles.sortPill, sortBy === opt.value && styles.sortPillActive]}
-            onPress={() => setSortBy(opt.value)}
-          >
+          <TouchableOpacity key={opt.value} style={[styles.sortPill, sortBy === opt.value && styles.sortPillActive]} onPress={() => setSortBy(opt.value)}>
             <Text style={[styles.sortPillText, sortBy === opt.value && styles.sortPillTextActive]}>{opt.label}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
 
-      {/* Hide write/edit buttons when displayOnly */}
       {!displayOnly && user && canReview && !showForm && (
         <TouchableOpacity style={styles.writeBtn} onPress={openNewForm}>
           <Ionicons name="create-outline" size={18} color={COLORS.background} />
           <Text style={styles.writeBtnText}>Write a Review</Text>
         </TouchableOpacity>
       )}
-      {!displayOnly && user && alreadyReviewed && editingReview && !showForm && (
-        <TouchableOpacity style={[styles.writeBtn, { backgroundColor: COLORS.accent }]} onPress={() => openEditForm(editingReview)}>
+      {!displayOnly && user && alreadyReviewed && !showForm && (
+        <TouchableOpacity style={[styles.writeBtn, { backgroundColor: COLORS.accent }]} onPress={() => openEditForm(reviews.find(r => (r.user?._id || r.user) === myUserId))}>
           <Ionicons name="pencil-outline" size={18} color={COLORS.background} />
           <Text style={styles.writeBtnText}>Edit Your Review</Text>
         </TouchableOpacity>
       )}
 
-      {/* Write/edit form — hidden when displayOnly */}
       {!displayOnly && showForm && (
         <View style={styles.formBox}>
           <Text style={styles.formTitle}>{editingReview ? 'Edit Your Review' : 'Write a Review'}</Text>
           <Text style={styles.formLabel}>Your Rating</Text>
           <StarRow rating={rating} onPress={setRating} size={32} />
           <Text style={[styles.formLabel, { marginTop: 14 }]}>Title (optional)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Summarize your experience"
-            placeholderTextColor={COLORS.textMuted}
-            value={title}
-            onChangeText={setTitle}
-            maxLength={80}
-          />
+          <TextInput style={styles.input} placeholder="Summarize your experience" placeholderTextColor={COLORS.textMuted} value={title} onChangeText={setTitle} maxLength={80} />
           <Text style={styles.formLabel}>Comment</Text>
-          <TextInput
-            style={[styles.input, styles.commentInput]}
-            placeholder="Share your experience with this product..."
-            placeholderTextColor={COLORS.textMuted}
-            value={comment}
-            onChangeText={setComment}
-            multiline
-            maxLength={500}
-          />
+          <TextInput style={[styles.input, styles.commentInput]} placeholder="Share your experience..." placeholderTextColor={COLORS.textMuted} value={comment} onChangeText={setComment} multiline maxLength={500} />
           <Text style={styles.charCount}>{comment.length}/500</Text>
           <View style={styles.formActions}>
             <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowForm(false)}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit} disabled={submitting}>
-              {submitting
-                ? <ActivityIndicator color={COLORS.background} />
-                : <Text style={styles.submitBtnText}>{editingReview ? 'Update' : 'Submit'}</Text>
-              }
+              {submitting ? <ActivityIndicator color={COLORS.background} /> : <Text style={styles.submitBtnText}>{editingReview ? 'Update' : 'Submit'}</Text>}
             </TouchableOpacity>
           </View>
         </View>
       )}
 
-      {/* Reviews list */}
       {loading ? (
         <ActivityIndicator color={COLORS.primary} style={{ marginTop: 20 }} />
       ) : reviews.length === 0 ? (
         <View style={styles.emptyReviews}>
           <Ionicons name="chatbubble-outline" size={40} color={COLORS.textMuted} />
-          <Text style={styles.emptyText}>
-            {filterRating > 0 ? `No ${filterRating}-star reviews yet` : 'No reviews yet.'}
-          </Text>
+          <Text style={styles.emptyText}>{filterRating > 0 ? `No ${filterRating}-star reviews yet` : 'No reviews yet.'}</Text>
         </View>
       ) : (
         reviews.map((review) => (
-          <ReviewCard
-            key={review._id}
-            review={review}
-            isOwn={myUserId && review.user?._id?.toString() === myUserId.toString()}
-            onEdit={openEditForm}
-            displayOnly={displayOnly}
-          />
+          <ReviewCard key={review._id} review={review} isOwn={myUserId && review.user?._id?.toString() === myUserId.toString()} onEdit={openEditForm} displayOnly={displayOnly} />
         ))
       )}
     </View>

@@ -4,9 +4,10 @@ import {
   StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
-import { loginUser, clearError } from '../redux/slices/authSlice';
+import { loginUser, googleSignIn, clearError } from '../redux/slices/authSlice';
 import { COLORS } from '../constants/theme';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, FontAwesome } from '@expo/vector-icons';
+import { initializeGoogleSignIn, handleGoogleSignIn } from '../utils/googleSignIn';
 
 export default function LoginScreen({ navigation }) {
   const dispatch = useDispatch();
@@ -14,16 +15,11 @@ export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   useEffect(() => {
-    if (user) {
-      if (user.role === 'admin') {
-        navigation.replace('Admin', { screen: 'AdminDashboard' });
-      } else {
-        navigation.replace('Home', { screen: 'ProductList' });
-      }
-    }
-  }, [user]);
+    initializeGoogleSignIn();
+  }, []);
 
   useEffect(() => {
     if (error) { Alert.alert('Login Failed', error); dispatch(clearError()); }
@@ -31,7 +27,21 @@ export default function LoginScreen({ navigation }) {
 
   const handleLogin = () => {
     if (!email || !password) return Alert.alert('Missing Fields', 'Please enter email and password.');
+    console.log('🔐 Frontend Login attempt with email:', email.toLowerCase());
     dispatch(loginUser({ email: email.trim().toLowerCase(), password }));
+  };
+
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    const result = await handleGoogleSignIn();
+    setGoogleLoading(false);
+
+    if (result.success) {
+      const { email: googleEmail, name, idToken } = result.user;
+      dispatch(googleSignIn({ email: googleEmail, name, idToken }));
+    } else {
+      Alert.alert('Sign In Failed', result.message);
+    }
   };
 
   return (
@@ -74,6 +84,23 @@ export default function LoginScreen({ navigation }) {
             {loading ? <ActivityIndicator color={COLORS.background} /> : <Text style={styles.loginText}>Login</Text>}
           </TouchableOpacity>
 
+          <View style={styles.dividerContainer}>
+            <View style={styles.divider} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.divider} />
+          </View>
+
+          <TouchableOpacity style={styles.googleBtn} onPress={handleGoogleLogin} disabled={googleLoading}>
+            {googleLoading ? (
+              <ActivityIndicator color={COLORS.text} />
+            ) : (
+              <>
+                <FontAwesome name="google" size={18} color={COLORS.text} />
+                <Text style={styles.googleText}>Sign in with Google</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.registerLink} onPress={() => navigation.navigate('Register')}>
             <Text style={styles.registerText}>Don't have an account? <Text style={styles.registerBold}>Register</Text></Text>
           </TouchableOpacity>
@@ -103,6 +130,14 @@ const styles = StyleSheet.create({
     paddingVertical: 14, alignItems: 'center', marginBottom: 16,
   },
   loginText: { color: COLORS.background, fontWeight: '800', fontSize: 16 },
+  dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 16 },
+  divider: { flex: 1, height: 1, backgroundColor: COLORS.border },
+  dividerText: { marginHorizontal: 10, color: COLORS.textMuted, fontSize: 12, fontWeight: '600' },
+  googleBtn: {
+    backgroundColor: COLORS.surfaceLight, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
+    paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16,
+  },
+  googleText: { color: COLORS.text, fontWeight: '700', fontSize: 15 },
   registerLink: { alignItems: 'center' },
   registerText: { color: COLORS.textMuted, fontSize: 14 },
   registerBold: { color: COLORS.primary, fontWeight: '700' },
