@@ -7,6 +7,7 @@ import { useSelector } from 'react-redux';
 import { COLORS } from '../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/api';
+import { triggerLocalPromo } from '../utils/notifications';
 
 export default function AdminDashboard({ navigation }) {
   const { user, loading } = useSelector((s) => s.auth);
@@ -78,6 +79,17 @@ export default function AdminDashboard({ navigation }) {
         <StatCard icon="star" label="Reviews" value={stats.reviews} color="#8B5CF6" onPress={() => navigation.navigate('AdminReviews')} />
       </View>
 
+      <TouchableOpacity
+        style={styles.promoTestBtn}
+        onPress={() => triggerLocalPromo(
+          "Shift & Click: SALE! SALE! ⌨️",
+          "Our Gears are on sale! Tap to view code.",
+        )}
+      >
+        <Ionicons name="megaphone-outline" size={20} color="#fff" />
+        <Text style={styles.promoTestText}>Promo Notification</Text>
+      </TouchableOpacity>
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionGrid}>
@@ -132,4 +144,20 @@ const styles = StyleSheet.create({
   infoBox: { flexDirection: 'row', backgroundColor: COLORS.primary + '15', borderRadius: 12, padding: 16, alignItems: 'center', gap: 12, marginBottom: 24, borderLeftWidth: 4, borderLeftColor: COLORS.primary },
   infoTitle: { color: COLORS.primary, fontSize: 13, fontWeight: '700' },
   infoText: { color: COLORS.textMuted, fontSize: 12, marginTop: 2 },
+  promoTestBtn: {
+    backgroundColor: '#7B61FF', 
+    margin: 15,
+    padding: 18,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    elevation: 4,
+  },
+  promoTestText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 15,
+  },
 });
