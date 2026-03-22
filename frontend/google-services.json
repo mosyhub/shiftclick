@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "934516610022",
+    "project_id": "shiftclick-2f4ed",
+    "storage_bucket": "shiftclick-2f4ed.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:934516610022:android:a6a822d1130ad1e159bc27",
+        "android_client_info": {
+          "package_name": "com.shiftclick.frontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBNmGEOf_C1c0HWwFWhbSsvtYOjvB2gDtw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
