@@ -11,36 +11,37 @@ import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'shiftandclick.db';
 
-const initDB = () => {
-  const db = SQLite.openDatabaseSync(DB_NAME);
-  db.execSync(`
-    CREATE TABLE IF NOT EXISTS cart (
-      id TEXT PRIMARY KEY,
-      name TEXT,
-      price REAL,
-      image TEXT,
-      quantity INTEGER,
-      brand TEXT,
-      category TEXT
-    );
-  `);
-  return db;
+// Initialize DB at module level so it's always ready before any effect runs
+let _db = null;
+const getDB = () => {
+  if (!_db) {
+    _db = SQLite.openDatabaseSync(DB_NAME);
+    _db.execSync(`
+      CREATE TABLE IF NOT EXISTS cart (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        price REAL,
+        image TEXT,
+        quantity INTEGER,
+        brand TEXT,
+        category TEXT
+      );
+    `);
+  }
+  return _db;
 };
 
 export default function CartScreen({ navigation }) {
   const dispatch = useDispatch();
   const { items, total } = useSelector((s) => s.cart);
   const { user } = useSelector((s) => s.auth);
-  const dbRef = useRef(null);
   const prevUserRef = useRef(undefined);
 
-  // Init DB once on mount
+  // Load cart on mount
   useEffect(() => {
     try {
-      dbRef.current = initDB();
-
-      // Load cart on mount
-      const rows = dbRef.current.getAllSync('SELECT * FROM cart;');
+      const db = getDB();
+      const rows = db.getAllSync('SELECT * FROM cart;');
       console.log('CartScreen mount - rows:', rows.length);
       if (rows.length > 0) {
         dispatch(setCart(rows.map((r) => ({
@@ -56,9 +57,11 @@ export default function CartScreen({ navigation }) {
         }))));
       }
     } catch (e) {
-      console.log('CartScreen DB init error:', e);
+      console.log('CartScreen mount error:', e);
     }
   }, []);
+
+
 
   // Watch user changes — clear SQLite when user logs out
   useEffect(() => {
@@ -72,32 +75,28 @@ export default function CartScreen({ navigation }) {
     if (!user && prevUser) {
       // User logged out — clear SQLite
       try {
-        if (dbRef.current) {
-          dbRef.current.execSync('DELETE FROM cart;');
-          console.log('Cart cleared from SQLite on logout');
-        }
+        getDB().execSync('DELETE FROM cart;');
+        console.log('Cart cleared from SQLite on logout');
       } catch (e) {
         console.log('Clear cart error:', e);
       }
     } else if (user && !prevUser) {
       // User logged in — load from SQLite
       try {
-        if (dbRef.current) {
-          const rows = dbRef.current.getAllSync('SELECT * FROM cart;');
-          console.log('User logged in - loading cart:', rows.length);
-          if (rows.length > 0) {
-            dispatch(setCart(rows.map((r) => ({
-              _id: r.id,
-              id: r.id,
-              name: r.name,
-              price: r.price,
-              quantity: r.quantity,
-              brand: r.brand || '',
-              category: r.category || '',
-              image: r.image || '',
-              images: r.image ? [{ url: r.image }] : [],
-            }))));
-          }
+        const rows = getDB().getAllSync('SELECT * FROM cart;');
+        console.log('User logged in - loading cart:', rows.length);
+        if (rows.length > 0) {
+          dispatch(setCart(rows.map((r) => ({
+            _id: r.id,
+            id: r.id,
+            name: r.name,
+            price: r.price,
+            quantity: r.quantity,
+            brand: r.brand || '',
+            category: r.category || '',
+            image: r.image || '',
+            images: r.image ? [{ url: r.image }] : [],
+          }))));
         }
       } catch (e) {
         console.log('Load cart on login error:', e);
@@ -107,11 +106,11 @@ export default function CartScreen({ navigation }) {
 
   // Sync Redux → SQLite whenever items change
   useEffect(() => {
-    if (!dbRef.current) return;
     try {
-      dbRef.current.execSync('DELETE FROM cart;');
+      const db = getDB();
+      db.execSync('DELETE FROM cart;');
       items.forEach((item) => {
-        dbRef.current.runSync(
+        db.runSync(
           'INSERT OR REPLACE INTO cart (id, name, price, image, quantity, brand, category) VALUES (?, ?, ?, ?, ?, ?, ?);',
           [
             item._id || item.id,
@@ -138,7 +137,7 @@ export default function CartScreen({ navigation }) {
       ]);
       return;
     }
-    navigation.navigate('Checkout');
+    navigation.navigate('Orders', { screen: 'Checkout' });
   };
 
   const renderItem = ({ item }) => (

@@ -27,7 +27,7 @@ export default function AdminProducts({ navigation }) {
 
     if (user.role !== 'admin') {
       Alert.alert('Access Denied', 'You must be an admin to access this page.');
-      navigation.navigate('ProductList');
+      navigation.navigate('Home');
       return;
     }
 
