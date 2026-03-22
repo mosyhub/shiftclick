@@ -7,7 +7,7 @@ let expo = new Expo();
 // @access  Admin
 const sendBroadcastNotification = async (req, res) => {
   try {
-    const { title, body, data } = req.body; // e.g. { title: "SALE!", body: "50% off keyboards" }
+    const { title, body, data } = req.body; // e.g. "SALE!", body: "50% off keyboards" 
 
     // fetch all users with Expo push tokens
     const users = await User.find({ "expoPushTokens.0": { $exists: true } });

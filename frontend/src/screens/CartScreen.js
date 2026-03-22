@@ -138,7 +138,7 @@ export default function CartScreen({ navigation }) {
       ]);
       return;
     }
-    navigation.navigate('Checkout');
+    navigation.navigate('Orders', { screen: 'Checkout' });
   };
 
   const renderItem = ({ item }) => (
