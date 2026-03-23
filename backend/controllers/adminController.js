@@ -164,8 +164,137 @@ const applyPromotion = async (req, res) => {
                 }
               }
             } catch (chunkError) {
-              console.error(`❌ Error sending chunk ${chunkIdx + 1}:`, chunkError.message);
+              console.error(`\n❌ Error sending chunk ${chunkIdx + 1}:`, chunkError.message);
               console.error('Chunk error details:', chunkError);
+              
+              // Handle multi-project conflict
+              if (chunkError.code === 'PUSH_TOO_MANY_EXPERIENCE_IDS' && chunkError.details) {
+                console.error(`\n⚠️  MULTI-PROJECT CONFLICT DETECTED!`);
+                console.error(`Projects found:`, Object.keys(chunkError.details));
+                
+                // Identify old and current projects
+                const projectEntries = Object.entries(chunkError.details);
+                const oldProjects = ['@ntwny/frontend']; // Known old projects
+                const oldTokens = [];
+                const validTokens = [];
+                
+                for (const [project, tokens] of projectEntries) {
+                  console.error(`   Project: ${project}, Tokens: ${tokens.length}`);
+                  if (oldProjects.includes(project)) {
+                    oldTokens.push(...tokens);
+                  } else {
+                    validTokens.push(...tokens);
+                  }
+                }
+                
+                console.log(`\n🗑️  REMOVING ${oldTokens.length} OLD PROJECT TOKENS FROM DATABASE...`);
+                console.log(`✅ KEEPING ${validTokens.length} CURRENT PROJECT TOKENS...`);
+                
+                // Remove ONLY old project tokens from database
+                if (oldTokens.length > 0) {
+                  const usersToUpdate = await User.find({ 
+                    'expoPushTokens.token': { $in: oldTokens }
+                  });
+                  
+                  let totalRemoved = 0;
+                  for (let user of usersToUpdate) {
+                    const beforeCount = user.expoPushTokens.length;
+                    user.expoPushTokens = user.expoPushTokens.filter(t => !oldTokens.includes(t.token));
+                    const afterCount = user.expoPushTokens.length;
+                    
+                    if (beforeCount !== afterCount) {
+                      await user.save();
+                      totalRemoved += (beforeCount - afterCount);
+                      console.log(`✅ Removed ${beforeCount - afterCount} old token(s) from ${user.email}`);
+                    }
+                  }
+                  
+                  console.log(`\n✅ Total old tokens removed from database: ${totalRemoved}`);
+                }
+                
+                // Rebuild messages with ONLY valid project tokens
+                console.log(`\n🔄 REBUILDING MESSAGE LIST WITH VALID PROJECT TOKENS...\n`);
+                
+                messages = [];
+                tokenMap = {};
+                
+                const validUsers = await User.find({ "expoPushTokens.0": { $exists: true } });
+                
+                for (let user of validUsers) {
+                  for (let pushToken of user.expoPushTokens) {
+                    // Only include tokens from valid projects
+                    if (!validTokens.includes(pushToken.token)) {
+                      console.log(`   ⏭️  Skipping old project token: ${pushToken.token.substring(0, 20)}...`);
+                      continue;
+                    }
+                    
+                    if (!Expo.isExpoPushToken(pushToken.token)) continue;
+                    
+                    const discountedPrice = +(product.price * (1 - discount / 100)).toFixed(2);
+                    
+                    const message = {
+                      to: pushToken.token,
+                      sound: 'default',
+                      title: `${discount}% OFF on ${product.name}!`,
+                      body: `Now ₱${discountedPrice} (was ₱${product.price})`,
+                      data: {
+                        productId: product._id.toString(),
+                        discount: discount,
+                        originalPrice: product.price,
+                        discountedPrice: discountedPrice,
+                        screen: 'ProductDetail'
+                      },
+                    };
+                    
+                    messages.push(message);
+                    tokenMap[pushToken.token] = user._id;
+                  }
+                }
+                
+                console.log(`\n📨 Valid messages after cleanup: ${messages.length}`);
+                
+                // Retry with cleaned up messages
+                if (messages.length > 0) {
+                  console.log(`\n🔄 RETRYING BROADCAST WITH ${messages.length} VALID TOKENS...\n`);
+                  
+                  const retryChunks = expo.chunkPushNotifications(messages);
+                  
+                  for (let retryChunkIdx = 0; retryChunkIdx < retryChunks.length; retryChunkIdx++) {
+                    const retryChunk = retryChunks[retryChunkIdx];
+                    
+                    try {
+                      console.log(`📤 Retry chunk ${retryChunkIdx + 1}/${retryChunks.length} with ${retryChunk.length} messages...`);
+                      const retryResults = await expo.sendPushNotificationsAsync(retryChunk);
+                      
+                      for (let i = 0; i < retryResults.length; i++) {
+                        const result = retryResults[i];
+                        const tokenObj = retryChunk[i];
+                        const userId = tokenMap[tokenObj.to];
+                        
+                        if (result.status === 'ok') {
+                          sentCount++;
+                          console.log(`✅ Retry successful: ${tokenObj.to.substring(0, 20)}...`);
+                          await Notification.create({
+                            recipientId: userId,
+                            title: tokenObj.title,
+                            body: tokenObj.body,
+                            data: tokenObj.data,
+                            type: 'promotion',
+                            expoToken: tokenObj.to,
+                            status: 'sent',
+                            sentAt: new Date(),
+                          });
+                        } else {
+                          failedTokens.push(tokenObj.to);
+                          console.error(`❌ Retry failed: ${tokenObj.to.substring(0, 20)}...`);
+                        }
+                      }
+                    } catch (retryErr) {
+                      console.error(`❌ Retry chunk error:`, retryErr.message);
+                    }
+                  }
+                }
+              }
             }
           }
 

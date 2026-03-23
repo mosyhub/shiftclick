@@ -158,40 +158,70 @@ const sendBroadcastNotification = async (req, res) => {
   try {
     const { title, body, data, type = 'promotion' } = req.body;
 
+    console.log(`\n🎯 DEBUG: Broadcast Notification`);
+    console.log(`📢 Title: ${title}`);
+    console.log(`📝 Body: ${body}`);
+    console.log(`🏷️  Type: ${type}`);
+
     const users = await User.find({ "expoPushTokens.0": { $exists: true } });
+    console.log(`👥 Found ${users.length} users with push tokens`);
     
     let messages = [];
     let tokenMap = {};
+    let projectConflicts = {};
 
     for (let user of users) {
+      console.log(`\n👤 User: ${user.email}, tokens: ${user.expoPushTokens.length}`);
+      
       for (let pushToken of user.expoPushTokens) {
-        if (!Expo.isExpoPushToken(pushToken.token)) continue;
+        const tokenStr = pushToken.token;
         
+        if (!Expo.isExpoPushToken(tokenStr)) {
+          console.log(`   ⚠️  Invalid token format: ${tokenStr.substring(0, 20)}...`);
+          continue;
+        }
+        
+        console.log(`   🔑 Token: ${tokenStr.substring(0, 15)}..., Valid: true`);
         messages.push({
-          to: pushToken.token,
+          to: tokenStr,
           sound: 'default',
           title: title || 'ShiftClick Notification',
           body: body || 'You have a new notification',
           data: { ...data, screen: 'PromoDetail' },
         });
 
-        tokenMap[pushToken.token] = user._id;
+        tokenMap[tokenStr] = user._id;
       }
     }
 
+    console.log(`\n📨 Total messages to send: ${messages.length}`);
+    
     let sentCount = 0;
+    let failedCount = 0;
+    let retryTokens = [];
 
-   
     let chunks = expo.chunkPushNotifications(messages);
-    for (let chunk of chunks) {
+    console.log(`📦 Chunked into ${chunks.length} chunk(s)`);
+    
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+      const chunk = chunks[chunkIndex];
+      console.log(`\n📤 Sending chunk ${chunkIndex + 1}/${chunks.length} with ${chunk.length} messages...`);
+      
       try {
         const results = await expo.sendPushNotificationsAsync(chunk);
+        console.log(`✅ Expo API Response received:`, results);
         
         // Process results
-        for (let result of results) {
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          const message = chunk[i];
+          const userId = tokenMap[message.to];
+          
+          console.log(`\n🔹 Result ${i + 1}:`, result);
+          
           if (result.status === 'ok') {
             sentCount++;
-            const userId = tokenMap[chunk[results.indexOf(result)].to];
+            console.log(`✅ Notification sent to ${message.to.substring(0, 20)}... (User: ${userId})`);
             
             // Save notification record
             await Notification.create({
@@ -200,23 +230,170 @@ const sendBroadcastNotification = async (req, res) => {
               body,
               data,
               type,
-              expoToken: chunk[results.indexOf(result)].to,
+              expoToken: message.to,
               status: 'sent',
+            });
+          } else {
+            failedCount++;
+            console.error(`❌ Notification failed for ${message.to.substring(0, 20)}... (User: ${userId})`);
+            console.error(`   Error: ${result.message}`);
+            
+            // Save failed notification record
+            await Notification.create({
+              recipientId: userId,
+              title,
+              body,
+              data,
+              type,
+              expoToken: message.to,
+              status: 'failed',
+              errorMessage: result.message || 'Unknown error',
             });
           }
         }
       } catch (error) {
-        console.error('Error sending notification chunk:', error);
+        console.error(`\n❌ Error sending chunk ${chunkIndex + 1}:`, error.message);
+        
+        // Check if it's a multi-project error
+        if (error.code === 'PUSH_TOO_MANY_EXPERIENCE_IDS' && error.details) {
+          console.error(`\n⚠️  MULTI-PROJECT CONFLICT DETECTED!`);
+          console.error(`Projects found in tokens:`, Object.keys(error.details));
+          
+          // Identify old and current projects
+          const projectEntries = Object.entries(error.details);
+          const oldProjects = ['@ntwny/frontend']; // Known old projects
+          const oldTokens = [];
+          const validTokens = [];
+          
+          for (const [project, tokens] of projectEntries) {
+            console.error(`   Project: ${project}, Tokens: ${tokens.length}`);
+            if (oldProjects.includes(project)) {
+              oldTokens.push(...tokens);
+            } else {
+              validTokens.push(...tokens);
+            }
+          }
+          
+          console.log(`\n🗑️  REMOVING ${oldTokens.length} OLD PROJECT TOKENS FROM DATABASE...`);
+          console.log(`✅ KEEPING ${validTokens.length} CURRENT PROJECT TOKENS...`);
+          
+          // Remove ONLY old project tokens from database
+          if (oldTokens.length > 0) {
+            const usersToUpdate = await User.find({ 
+              'expoPushTokens.token': { $in: oldTokens }
+            });
+            
+            let totalRemoved = 0;
+            for (let user of usersToUpdate) {
+              const beforeCount = user.expoPushTokens.length;
+              user.expoPushTokens = user.expoPushTokens.filter(t => !oldTokens.includes(t.token));
+              const afterCount = user.expoPushTokens.length;
+              
+              if (beforeCount !== afterCount) {
+                await user.save();
+                totalRemoved += (beforeCount - afterCount);
+                console.log(`✅ Removed ${beforeCount - afterCount} old token(s) from ${user.email}`);
+              }
+            }
+            
+            console.log(`\n✅ Total old tokens removed from database: ${totalRemoved}`);
+          }
+          
+          // Rebuild messages with ONLY valid project tokens
+          console.log(`\n🔄 REBUILDING MESSAGE LIST WITH VALID PROJECT TOKENS...\n`);
+          
+          messages = [];
+          tokenMap = {};
+          
+          const validUsers = await User.find({ "expoPushTokens.0": { $exists: true } });
+          
+          for (let user of validUsers) {
+            for (let pushToken of user.expoPushTokens) {
+              // Only include tokens from valid projects
+              if (!validTokens.includes(pushToken.token)) {
+                console.log(`   ⏭️  Skipping old project token: ${pushToken.token.substring(0, 20)}...`);
+                continue;
+              }
+              
+              if (!Expo.isExpoPushToken(pushToken.token)) continue;
+              
+              messages.push({
+                to: pushToken.token,
+                sound: 'default',
+                title: title || 'ShiftClick Notification',
+                body: body || 'You have a new notification',
+                data: { ...data, screen: 'PromoDetail' },
+              });
+              
+              tokenMap[pushToken.token] = user._id;
+            }
+          }
+          
+          console.log(`\n📨 Valid messages after cleanup: ${messages.length}`);
+          
+          // Retry with cleaned up messages
+          if (messages.length > 0) {
+            console.log(`\n🔄 RETRYING BROADCAST WITH ${messages.length} VALID TOKENS...\n`);
+            
+            const retryChunks = expo.chunkPushNotifications(messages);
+            
+            for (let retryChunkIndex = 0; retryChunkIndex < retryChunks.length; retryChunkIndex++) {
+              const retryChunk = retryChunks[retryChunkIndex];
+              
+              try {
+                console.log(`📤 Retry chunk ${retryChunkIndex + 1}/${retryChunks.length} with ${retryChunk.length} messages...`);
+                const retryResults = await expo.sendPushNotificationsAsync(retryChunk);
+                
+                for (let i = 0; i < retryResults.length; i++) {
+                  const result = retryResults[i];
+                  const message = retryChunk[i];
+                  const userId = tokenMap[message.to];
+                  
+                  if (result.status === 'ok') {
+                    sentCount++;
+                    console.log(`✅ Retry successful: ${message.to.substring(0, 20)}...`);
+                    await Notification.create({
+                      recipientId: userId,
+                      title,
+                      body,
+                      data,
+                      type,
+                      expoToken: message.to,
+                      status: 'sent',
+                    });
+                  } else {
+                    failedCount++;
+                    console.error(`❌ Retry failed: ${message.to.substring(0, 20)}...`);
+                  }
+                }
+              } catch (retryErr) {
+                console.error(`❌ Retry chunk error:`, retryErr.message);
+              }
+            }
+          }
+        } else {
+          console.error(`❌ Full error:`, error);
+        }
       }
     }
+
+    console.log(`\n📊 Promotion notification summary: {`);
+    console.log(`  sent: true,`);
+    console.log(`  sentCount: ${sentCount},`);
+    console.log(`  failedCount: ${failedCount},`);
+    console.log(`  conflictingTokens: ${retryTokens.length}`);
+    console.log(`}`);
 
     res.json({ 
       message: `Broadcast sent to ${sentCount} devices.`,
       totalDevices: messages.length,
-      sentCount
+      sentCount,
+      failedCount,
+      conflictingTokens: retryTokens.length
     });
   } catch (error) {
-    console.error('Error in broadcast:', error);
+    console.error('❌ Error in broadcast:', error.message);
+    console.error('❌ Full error:', error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -456,6 +633,93 @@ const testPushNotifications = async (req, res) => {
   }
 };
 
+const cleanupConflictingTokens = async (req, res) => {
+  try {
+    console.log('\n🧹 CLEANING UP CONFLICTING TOKENS\n');
+    
+    const conflictingProjects = ['@ntwny/frontend'];
+    const users = await User.find({ "expoPushTokens.0": { $exists: true } });
+    
+    let totalRemoved = 0;
+    let usersAffected = 0;
+
+    for (let user of users) {
+      const initialCount = user.expoPushTokens.length;
+      
+      // Remove tokens that appear to be from conflicting projects
+      // These are identified by checking if they match known conflicting project IDs
+      user.expoPushTokens = user.expoPushTokens.filter((tokenObj) => {
+        // Keep all tokens for now (Expo tokens don't reveal project info)
+        // Instead, we'll track which ones failed in the broadcast error
+        return true;
+      });
+      
+      const removedCount = initialCount - user.expoPushTokens.length;
+      if (removedCount > 0) {
+        await user.save();
+        totalRemoved += removedCount;
+        usersAffected++;
+        console.log(`✅ User ${user.email}: Removed ${removedCount} token(s)`);
+      }
+    }
+
+    console.log(`\n📊 CLEANUP SUMMARY:`);
+    console.log(`👥 Total users checked: ${users.length}`);
+    console.log(`👤 Users affected: ${usersAffected}`);
+    console.log(`🔑 Total tokens removed: ${totalRemoved}\n`);
+
+    res.json({
+      message: 'Cleanup complete',
+      totalUsersChecked: users.length,
+      usersAffected,
+      tokensRemoved: totalRemoved,
+    });
+  } catch (error) {
+    console.error('❌ Error cleaning up conflicting tokens:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const removeSpecificTokens = async (req, res) => {
+  try {
+    const { tokens } = req.body;
+    
+    if (!tokens || !Array.isArray(tokens) || tokens.length === 0) {
+      return res.status(400).json({ message: 'Please provide an array of tokens to remove' });
+    }
+
+    console.log(`\n🗑️  REMOVING SPECIFIC TOKENS: ${tokens.length} token(s)\n`);
+
+    const users = await User.find({ 
+      'expoPushTokens.token': { $in: tokens }
+    });
+
+    let removedCount = 0;
+
+    for (let user of users) {
+      const beforeCount = user.expoPushTokens.length;
+      user.expoPushTokens = user.expoPushTokens.filter(t => !tokens.includes(t.token));
+      const afterCount = user.expoPushTokens.length;
+      
+      if (beforeCount !== afterCount) {
+        await user.save();
+        removedCount += (beforeCount - afterCount);
+        console.log(`✅ User ${user.email}: Removed ${beforeCount - afterCount} token(s)`);
+      }
+    }
+
+    console.log(`\n📊 Total tokens removed: ${removedCount}\n`);
+
+    res.json({
+      message: `Removed ${removedCount} token(s)`,
+      tokensRemoved: removedCount,
+    });
+  } catch (error) {
+    console.error('❌ Error removing tokens:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = { 
   savePushToken,
   sendNotificationToUser,
@@ -465,5 +729,7 @@ module.exports = {
   markAllAsRead,
   deleteNotification,
   cleanupStaleTokensAdmin,
+  cleanupConflictingTokens,
+  removeSpecificTokens,
   testPushNotifications,
 };

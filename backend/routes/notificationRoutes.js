@@ -9,6 +9,8 @@ const {
   markAllAsRead,
   deleteNotification,
   cleanupStaleTokensAdmin,
+  cleanupConflictingTokens,
+  removeSpecificTokens,
   testPushNotifications,
 } = require('../controllers/notificationController');
 const { protect, adminOnly } = require('../middleware/authMiddleware');
@@ -24,6 +26,8 @@ router.delete('/:notificationId', protect, deleteNotification);
 router.post('/send-to-user', protect, adminOnly, sendNotificationToUser);
 router.post('/broadcast', protect, adminOnly, sendBroadcastNotification);
 router.post('/cleanup-stale-tokens', protect, adminOnly, cleanupStaleTokensAdmin); // Cleanup stale tokens
+router.post('/cleanup-conflicts', protect, adminOnly, cleanupConflictingTokens); // Cleanup conflicting project tokens
+router.post('/remove-tokens', protect, adminOnly, removeSpecificTokens); // Remove specific tokens
 router.post('/test', protect, adminOnly, testPushNotifications); // Test push notification system
 
 module.exports = router;

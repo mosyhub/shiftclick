@@ -111,7 +111,7 @@ const updateOrderStatus = async (req, res) => {
     const { status, note, paymentStatus } = req.body;
     const isAdmin = req.user.role === 'admin';
 
-    const order = await Order.findById(req.params.id).populate('user', 'name email expoPushTokens');
+    const order = await Order.findById(req.params.id).populate('user');
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
     // --- Role-based permission check ---
@@ -154,13 +154,25 @@ const updateOrderStatus = async (req, res) => {
     await order.save();
 
     // --- Send push notification to customer ---
+    console.log(`\n🔍 DEBUG: Order Status Update Notification`);
+    console.log(`📋 Order ID: ${order._id}`);
+    console.log(`👤 User ID: ${order.user._id}`);
+    console.log(`👤 User Email: ${order.user.email}`);
+    console.log(`📱 User Object Keys:`, Object.keys(order.user.toObject ? order.user.toObject() : order.user));
+    console.log(`📱 expoPushTokens Array:`, order.user.expoPushTokens);
+    console.log(`📱 Tokens Count:`, order.user.expoPushTokens?.length || 0);
+    
     const pushTokens = order.user?.expoPushTokens || [];
     if (pushTokens.length > 0) {
       const messages = [];
       const tokenMap = {}; // Track which message belongs to which token
       
       for (const tokenObj of pushTokens) {
-        if (!Expo.isExpoPushToken(tokenObj.token)) continue;
+        console.log(`\n🔹 Processing token:`, tokenObj.token?.substring(0, 20), '...');
+        if (!Expo.isExpoPushToken(tokenObj.token)) {
+          console.log(`⚠️  Invalid Expo token format`);
+          continue;
+        }
         
         const message = {
           to: tokenObj.token,
@@ -175,11 +187,13 @@ const updateOrderStatus = async (req, res) => {
       
       if (messages.length > 0) {
         const chunks = expo.chunkPushNotifications(messages);
-        console.log(`📨 Order notification: ${messages.length} messages in ${chunks.length} chunk(s)`);
+        console.log(`\n📨 Order notification: ${messages.length} messages in ${chunks.length} chunk(s)`);
         
         for (const chunk of chunks) {
           try { 
+            console.log(`\n📤 Sending chunk with ${chunk.length} messages...`);
             const results = await expo.sendPushNotificationsAsync(chunk);
+            console.log(`✅ Expo API Response received:`, results);
             
             // Process results and save notification records only for successful sends
             for (let i = 0; i < results.length; i++) {
@@ -187,6 +201,7 @@ const updateOrderStatus = async (req, res) => {
               const message = chunk[i];
               const tokenObj = tokenMap[message.to];
               
+              console.log(`\n🔹 Result ${i + 1}:`, result);
               try {
                 if (result.status === 'ok') {
                   console.log(`✅ Order notification sent to ${message.to.substring(0, 20)}...`);
@@ -215,19 +230,28 @@ const updateOrderStatus = async (req, res) => {
                   });
                 }
               } catch (dbErr) {
-                console.error('Error saving notification to DB:', dbErr.message);
+                console.error('❌ Error saving notification to DB:', dbErr.message);
               }
             }
           }
           catch (err) { 
-            console.error('Push error:', err.message); 
+            console.error('❌ Push error:', err.message);
+            console.error('❌ Full error:', err);
           }
         }
+      } else {
+        console.log(`⚠️  No valid tokens found to send notifications`);
       }
+    } else {
+      console.log(`⚠️  No push tokens found for user ${order.user._id}`);
     }
 
     res.json(order);
   } catch (error) {
+    console.error(`\n❌ ERROR in updateOrderStatus:`);
+    console.error(`Error Message: ${error.message}`);
+    console.error(`Error Stack: ${error.stack}`);
+    console.error(`Full Error:`, error);
     res.status(400).json({ message: error.message });
   }
 };
