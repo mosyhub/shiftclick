@@ -34,7 +34,7 @@ export default function OrdersScreen({ navigation }) {
     });
     // ✅ Redux dispatch instead of direct api.get()
     dispatch(fetchMyOrders());
-  }, [user]);
+  }, [user, dispatch, navigation]);
 
   const renderOrder = ({ item }) => (
     <TouchableOpacity

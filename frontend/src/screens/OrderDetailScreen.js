@@ -49,7 +49,7 @@ export default function OrderDetailScreen({ route, navigation }) {
   useEffect(() => {
     // ✅ Redux dispatch instead of direct api.get()
     dispatch(fetchOrderById(orderId));
-  }, [orderId]);
+  }, [orderId, dispatch]);
 
   useEffect(() => {
     if (order?.status === 'Delivered' && user?.role !== 'admin') {
@@ -183,21 +183,27 @@ export default function OrderDetailScreen({ route, navigation }) {
       </View>
 
       {/* Admin status update */}
-      {user?.role === 'admin' && !['Delivered', 'Cancelled'].includes(order.status) && (
+      {user?.role === 'admin' && !['Delivered', 'Cancelled'].includes(order.status) && order.status !== 'Shipped' && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Update Status</Text>
           {updating ? <ActivityIndicator color={COLORS.primary} /> : (
             <View style={styles.statusRow}>
-              {['Processing', 'Shipped'].map((s) => (
+              {order.status === 'Pending' && (
                 <TouchableOpacity
-                  key={s}
-                  style={[styles.statusBtn, order.status === s && { backgroundColor: STATUS_COLORS[s], borderColor: STATUS_COLORS[s] }]}
-                  onPress={() => s !== order.status && handleUpdateStatus(s)}
-                  disabled={order.status === s}
+                  style={[styles.statusBtn]}
+                  onPress={() => handleUpdateStatus('Processing')}
                 >
-                  <Text style={[styles.statusBtnText, order.status === s && { color: COLORS.background }]}>{s}</Text>
+                  <Text style={styles.statusBtnText}>Move to Processing</Text>
                 </TouchableOpacity>
-              ))}
+              )}
+              {order.status === 'Processing' && (
+                <TouchableOpacity
+                  style={[styles.statusBtn]}
+                  onPress={() => handleUpdateStatus('Shipped')}
+                >
+                  <Text style={styles.statusBtnText}>Mark as Shipped</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
         </View>

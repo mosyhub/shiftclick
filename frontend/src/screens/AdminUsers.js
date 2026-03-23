@@ -89,7 +89,7 @@ export default function AdminUsers({ navigation }) {
           <Text style={styles.userEmail}>{item.email}</Text>
           <View style={styles.roleContainer}>
             <Text style={[styles.roleTag, { backgroundColor: item.role === 'admin' ? COLORS.error + '20' : COLORS.success + '20' }]}>
-              {item.role === 'admin' ? '🔐 Admin' : '👤 User'}
+              {item.role === 'admin' ? 'Admin' : 'User'}
             </Text>
             {!item.isActive && (
               <Text style={[styles.roleTag, { backgroundColor: COLORS.error + '20', marginLeft: 6 }]}>

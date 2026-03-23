@@ -77,7 +77,7 @@ export default function AdminDashboard({ navigation }) {
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>Welcome back,</Text>
-          <Text style={styles.adminName}>{user?.name} 👨‍💼</Text>
+          <Text style={styles.adminName}>{user?.name} </Text>
         </View>
       </View>
 

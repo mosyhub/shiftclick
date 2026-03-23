@@ -1,4 +1,3 @@
-// File: controllers/adminController.js
 const Product = require('../models/Product');
 const User = require('../models/User');
 const Order = require('../models/Order');
@@ -8,9 +7,6 @@ const { Expo } = require('expo-server-sdk');
 
 let expo = new Expo();
 
-// @desc    Get dashboard statistics
-// @route   GET /api/admin/stats
-// @access  Admin Only
 const getDashboardStats = async (req, res) => {
   try {
     console.log('📊 [Admin] Fetching dashboard stats...');
@@ -38,9 +34,6 @@ const getDashboardStats = async (req, res) => {
   }
 };
 
-// @desc    Apply discount to product and send promotion notification
-// @route   POST /api/admin/apply-promotion
-// @access  Admin Only
 const applyPromotion = async (req, res) => {
   try {
     const { productId, discount, sendNotification = false } = req.body;
@@ -54,7 +47,6 @@ const applyPromotion = async (req, res) => {
       return res.status(400).json({ message: 'Discount must be between 0 and 100' });
     }
 
-    // Update product discount
     const product = await Product.findByIdAndUpdate(
       productId,
       { discount: Number(discount) },
@@ -71,17 +63,23 @@ const applyPromotion = async (req, res) => {
       message: 'Discount updated successfully'
     };
 
-    // Send promotion notification if requested
     if (sendNotification && discount > 0) {
       try {
         const users = await User.find({ "expoPushTokens.0": { $exists: true } });
+        
+        console.log(`📱 Found ${users.length} users with push tokens`);
         
         let messages = [];
         let tokenMap = {};
 
         for (let user of users) {
+          console.log(`👤 User: ${user.email}, tokens: ${user.expoPushTokens.length}`);
+          
           for (let pushToken of user.expoPushTokens) {
+            console.log(`🔑 Token: ${pushToken.token.substring(0, 20)}..., Valid: ${Expo.isExpoPushToken(pushToken.token)}`);
+            
             if (!Expo.isExpoPushToken(pushToken.token)) {
+              console.warn(`⚠️  Invalid Expo token for user ${user.email}`);
               continue;
             }
             
@@ -93,7 +91,7 @@ const applyPromotion = async (req, res) => {
               title: `${discount}% OFF on ${product.name}!`,
               body: `Now ₱${discountedPrice} (was ₱${product.price})`,
               data: {
-                productId: product._id,
+                productId: product._id.toString(),
                 discount: discount,
                 originalPrice: product.price,
                 discountedPrice: discountedPrice,
@@ -106,63 +104,84 @@ const applyPromotion = async (req, res) => {
           }
         }
 
+        console.log(`📨 Total messages to send: ${messages.length}`);
+        
         let sentCount = 0;
         let failedTokens = [];
-
-        // Send notifications in chunks to avoid rate limits
-        let chunks = expo.chunkPushNotifications(messages);
         
-        for (let chunk of chunks) {
-          try {
-            const results = await expo.sendPushNotificationsAsync(chunk);
+        if (messages.length === 0) {
+          console.warn('⚠️  No valid push tokens found to send notifications');
+          notificationResult = {
+            sent: false,
+            sentCount: 0,
+            message: 'Discount updated, but no valid push tokens found to send notifications'
+          };
+        } else {
+          let chunks = expo.chunkPushNotifications(messages);
+          console.log(`📦 Chunked into ${chunks.length} chunk(s)`);
+          
+          for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+            let chunk = chunks[chunkIdx];
+            console.log(`📤 Sending chunk ${chunkIdx + 1}/${chunks.length} with ${chunk.length} messages...`);
             
-            for (let i = 0; i < results.length; i++) {
-              const result = results[i];
-              const tokenObj = chunk[i];
-              const userId = tokenMap[tokenObj.to];
+            try {
+              const results = await expo.sendPushNotificationsAsync(chunk);
+              console.log(`✅ Chunk ${chunkIdx + 1} sent, results:`, results);
+              
+              for (let i = 0; i < results.length; i++) {
+                const result = results[i];
+                const tokenObj = chunk[i];
+                const userId = tokenMap[tokenObj.to];
 
-              if (result.status === 'ok') {
-                sentCount++;
-                // Save notification record
-                await Notification.create({
-                  recipientId: userId,
-                  title: tokenObj.title,
-                  body: tokenObj.body,
-                  data: tokenObj.data,
-                  type: 'promotion',
-                  expoToken: tokenObj.to,
-                  status: 'sent',
-                  sentAt: new Date(),
-                });
-              } else {
-                failedTokens.push(tokenObj.to);
-                // Save failed notification record
-                await Notification.create({
-                  recipientId: userId,
-                  title: tokenObj.title,
-                  body: tokenObj.body,
-                  data: tokenObj.data,
-                  type: 'promotion',
-                  expoToken: tokenObj.to,
-                  status: 'failed',
-                  errorMessage: result.message || 'Unknown error',
-                });
+                if (result.status === 'ok') {
+                  sentCount++;
+                  console.log(`✅ Message sent successfully to token: ${tokenObj.to.substring(0, 20)}...`);
+                 
+                  await Notification.create({
+                    recipientId: userId,
+                    title: tokenObj.title,
+                    body: tokenObj.body,
+                    data: tokenObj.data,
+                    type: 'promotion',
+                    expoToken: tokenObj.to,
+                    status: 'sent',
+                    sentAt: new Date(),
+                  });
+                } else {
+                  failedTokens.push(tokenObj.to);
+                  console.error(`❌ Message failed for token ${tokenObj.to.substring(0, 20)}...:`, result);
+                
+                  await Notification.create({
+                    recipientId: userId,
+                    title: tokenObj.title,
+                    body: tokenObj.body,
+                    data: tokenObj.data,
+                    type: 'promotion',
+                    expoToken: tokenObj.to,
+                    status: 'failed',
+                    errorMessage: result.message || 'Unknown error',
+                  });
+                }
               }
+            } catch (chunkError) {
+              console.error(`❌ Error sending chunk ${chunkIdx + 1}:`, chunkError.message);
+              console.error('Chunk error details:', chunkError);
             }
-          } catch (error) {
-            console.error('Error sending chunk:', error.message);
           }
-        }
 
-        notificationResult = {
-          sent: true,
-          sentCount,
-          failedTokens,
-          message: `Discount applied and notification sent to ${sentCount} user(s)`
-        };
+          notificationResult = {
+            sent: true,
+            sentCount,
+            failedTokens,
+            message: `Discount applied and notification sent to ${sentCount} user(s) (${failedTokens.length} failed)`
+          };
+          
+          console.log(`\n📊 Promotion notification summary:`, notificationResult);
+        }
       } catch (error) {
-        console.error('Error sending promotion notification:', error.message);
-        notificationResult.message += ' (but notification sending failed)';
+        console.error('❌ Error sending promotion notification:', error.message);
+        console.error('Full error:', error);
+        notificationResult.message += ' (but notification sending failed - see logs)';
       }
     }
 

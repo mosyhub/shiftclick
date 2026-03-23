@@ -15,7 +15,24 @@ export default function NotificationsScreen({ navigation }) {
 
   useEffect(() => {
     loadNotifications();
-  }, []);
+    
+    // Setup listener to refresh notifications when a new one arrives
+    const subscription = Notifications.addNotificationReceivedListener(notification => {
+      console.log('🔔 New notification received, refreshing list...');
+      loadNotifications();
+    });
+
+    // Setup focus listener to refresh when returning to this screen
+    const focusSubscription = navigation.addListener('focus', () => {
+      console.log('📱 Notifications screen focused, refreshing...');
+      loadNotifications();
+    });
+
+    return () => {
+      subscription.remove();
+      focusSubscription();
+    };
+  }, [navigation]);
 
   const loadNotifications = async () => {
     try {
@@ -37,6 +54,12 @@ export default function NotificationsScreen({ navigation }) {
     const data = notification.data;
     if (data?.orderId) {
       navigation.navigate('Orders', { screen: 'OrderDetail', params: { orderId: data.orderId } });
+    } else if (data?.productId) {
+      navigation.navigate('Home', { screen: 'ProductList', params: { productId: data.productId } });
+      // Navigate to product detail after ProductList loads
+      setTimeout(() => {
+        navigation.navigate('ProductDetail', { productId: data.productId });
+      }, 500);
     }
   };
 
@@ -61,35 +84,44 @@ export default function NotificationsScreen({ navigation }) {
     }
   };
 
-  const renderNotification = ({ item }) => (
-    <TouchableOpacity 
-      style={[styles.card, !item.isRead && styles.unread]} 
-      onPress={() => handleNotificationPress(item)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.iconContainer}>
-        <Ionicons 
-          name={item.type === 'order' ? 'bag-check' : 'notifications'} 
-          size={24} 
-          color={COLORS.primary} 
-        />
-      </View>
-      <View style={styles.content}>
-        <Text style={styles.title}>{item.title}</Text>
-        <Text style={styles.body}>{item.body}</Text>
-        {item.data?.orderId && (
-          <Text style={styles.tap}>Tap to view order details →</Text>
-        )}
-        <Text style={styles.time}>{new Date(item.sentAt).toLocaleDateString()}</Text>
-      </View>
+  const renderNotification = ({ item }) => {
+    // Get icon based on notification type
+    let iconName = 'notifications';
+    let iconColor = COLORS.primary;
+    
+    if (item.type === 'order') iconName = 'bag-check';
+    else if (item.type === 'promotion') iconName = 'gift';
+    
+    return (
       <TouchableOpacity 
-        style={styles.deleteBtn}
-        onPress={() => deleteNotification(item._id)}
+        style={[styles.card, !item.isRead && styles.unread]} 
+        onPress={() => handleNotificationPress(item)}
+        activeOpacity={0.7}
       >
-        <Ionicons name="close" size={18} color={COLORS.textMuted} />
+        <View style={styles.iconContainer}>
+          <Ionicons 
+            name={iconName} 
+            size={24} 
+            color={iconColor} 
+          />
+        </View>
+        <View style={styles.content}>
+          <Text style={styles.title}>{item.title}</Text>
+          <Text style={styles.body}>{item.body}</Text>
+          {(item.data?.orderId || item.data?.productId) && (
+            <Text style={styles.tap}>Tap to view details →</Text>
+          )}
+          <Text style={styles.time}>{new Date(item.sentAt).toLocaleDateString()}</Text>
+        </View>
+        <TouchableOpacity 
+          style={styles.deleteBtn}
+          onPress={() => deleteNotification(item._id)}
+        >
+          <Ionicons name="close" size={18} color={COLORS.textMuted} />
+        </TouchableOpacity>
       </TouchableOpacity>
-    </TouchableOpacity>
-  );
+    );
+  };
 
   if (loading) {
     return (

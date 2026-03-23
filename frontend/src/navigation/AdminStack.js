@@ -23,7 +23,7 @@ const options = {
 function AdminStackNavigator() {
   return (
     <Stack.Navigator screenOptions={options}>
-      <Stack.Screen name="AdminDashboard" component={AdminDashboard} options={{ title: 'Admin Dashboard 🔐' }} />
+      <Stack.Screen name="AdminDashboard" component={AdminDashboard} options={{ title: 'Admin Dashboard' }} />
       <Stack.Screen name="AdminUsers" component={AdminUsers} options={{ title: 'Manage Users' }} />
       <Stack.Screen name="AdminProducts" component={AdminProducts} options={{ title: 'Manage Products' }} />
       <Stack.Screen name="AdminOrders" component={AdminOrders} options={{ title: 'Manage Orders' }} />

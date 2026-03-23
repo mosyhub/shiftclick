@@ -12,7 +12,7 @@ const options = { headerStyle: { backgroundColor: COLORS.surface }, headerTintCo
 export default function ProductStack() {
   return (
     <Stack.Navigator screenOptions={options}>
-      <Stack.Screen name="ProductList" component={ProductListScreen} options={{ title: 'Shift & Click 🎮' }} />
+      <Stack.Screen name="ProductList" component={ProductListScreen} options={{ title: 'Shift & Click' }} />
       <Stack.Screen name="ProductDetail" component={ProductDetailScreen} options={{ title: 'Product Details' }} />
       <Stack.Screen name="ProductForm" component={ProductFormScreen} options={{ title: 'Product Form' }} />
 

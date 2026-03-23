@@ -3,6 +3,7 @@ import * as Device from 'expo-device';
 import { Platform, Alert } from 'react-native';
 import api from '../api/api';
 import Constants from 'expo-constants';
+import { fetchOrderById, fetchMyOrders } from '../redux/slices/orderSlice';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -95,7 +96,7 @@ export const triggerLocalPromo = async (title, body, promoId) => {
   try {
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: title || "Shift & Click Promo! 🎁",
+        title: title || "Shift & Click Promo!",
         body: body || "Get 50% off on all items! Tap to view details.",
         data: { 
           screen: 'PromoDetail', 
@@ -111,17 +112,17 @@ export const triggerLocalPromo = async (title, body, promoId) => {
         channelId: 'default',
       },
     });
-    console.log('✅ Local notification triggered!');
+    console.log('Local notification triggered!');
   } catch (error) {
-    console.error('❌ Error triggering local notification:', error);
+    console.error('Error triggering local notification:', error);
   }
 };
 
-export const setupNotificationListeners = (navigation) => {
-  console.log('🔔 Setting up notification listeners...');
+export const setupNotificationListeners = (navigation, dispatch) => {
+  console.log('Setting up notification listeners...');
   
   // Log when listeners are set up
-  console.log('📱 Notification listeners initializing for navigation:', !!navigation);
+  console.log('Notification listeners initializing for navigation:', !!navigation);
   
   // Handle notification when app is in foreground
   const notificationSubscription = Notifications.addNotificationReceivedListener(notification => {
@@ -129,33 +130,47 @@ export const setupNotificationListeners = (navigation) => {
     const body = notification.request.content.body;
     const data = notification.request.content.data;
     
-    console.log('🔔 ===== FOREGROUND NOTIFICATION RECEIVED =====');
+    console.log('===== FOREGROUND NOTIFICATION RECEIVED =====');
     console.log('Title:', title);
     console.log('Body:', body);
     console.log('Data:', data);
     console.log('=========================================');
     
+    // Refetch orders if this is an order status update notification
+    if (data?.orderId && dispatch) {
+      console.log('🔄 Refetching order data...');
+      dispatch(fetchOrderById(data.orderId));
+      dispatch(fetchMyOrders());
+    }
+    
     // Show alert in foreground so user knows they got a notification
+    const buttons = [
+      {
+        text: 'View',
+        onPress: () => {
+          if (data?.orderId) {
+            navigation.navigate('Orders', { 
+              screen: 'OrderDetail', 
+              params: { orderId: data.orderId } 
+            });
+          } else if (data?.productId) {
+            navigation.navigate('Home', { 
+              screen: 'ProductDetail', 
+              params: { productId: data.productId } 
+            });
+          }
+        },
+      },
+      {
+        text: 'Dismiss',
+        onPress: () => console.log('Notification dismissed'),
+      },
+    ];
+    
     Alert.alert(
       title || 'Notification',
       body || 'You have a new message',
-      [
-        {
-          text: 'View',
-          onPress: () => {
-            if (data?.orderId) {
-              navigation.navigate('Orders', { 
-                screen: 'OrderDetail', 
-                params: { orderId: data.orderId } 
-              });
-            }
-          },
-        },
-        {
-          text: 'Dismiss',
-          onPress: () => console.log('Notification dismissed'),
-        },
-      ],
+      buttons,
       { cancelable: true }
     );
   });
@@ -168,11 +183,23 @@ export const setupNotificationListeners = (navigation) => {
     
     console.log('🔔 TAPPED Notification:', { title, body, data });
 
+    // Refetch orders if this is an order status update notification
+    if (data?.orderId && dispatch) {
+      console.log('🔄 Refetching order data for tapped notification...');
+      dispatch(fetchOrderById(data.orderId));
+    }
+
     if (data?.orderId) {
       console.log('📦 Navigating to order:', data.orderId);
       navigation.navigate('Orders', { 
         screen: 'OrderDetail', 
         params: { orderId: data.orderId } 
+      });
+    } else if (data?.productId) {
+      console.log('🎁 Navigating to promotion product:', data.productId);
+      navigation.navigate('Home', { 
+        screen: 'ProductDetail', 
+        params: { productId: data.productId } 
       });
     }
   });

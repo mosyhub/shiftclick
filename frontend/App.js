@@ -8,6 +8,7 @@ import messaging from '@react-native-firebase/messaging';
 import { store } from './src/redux/store';
 import { loadUser } from './src/redux/slices/authSlice';
 import { clearCart } from './src/redux/slices/cartSlice';
+import { fetchMyOrders, fetchOrderById } from './src/redux/slices/orderSlice';
 import { registerForPushNotifications, setupNotificationListeners } from './src/utils/notifications';
 import DrawerNavigator from './src/navigation/DrawerNavigator';
 
@@ -118,9 +119,9 @@ function AppWrapper() {
   useEffect(() => {
     if (!navigationRef.current) return;
 
-    const sub = setupNotificationListeners(navigationRef.current);
+    const sub = setupNotificationListeners(navigationRef.current, dispatch);
     return () => sub?.remove();
-  }, []);
+  }, [dispatch]);
 
   return (
     <NavigationContainer ref={navigationRef}>

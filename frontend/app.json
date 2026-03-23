@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "Shift 'N Click",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/Shift_Click.jpg",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },

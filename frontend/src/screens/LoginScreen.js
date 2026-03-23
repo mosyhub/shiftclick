@@ -27,7 +27,7 @@ export default function LoginScreen({ navigation }) {
 
   const handleLogin = () => {
     if (!email || !password) return Alert.alert('Missing Fields', 'Please enter email and password.');
-    console.log('🔐 Frontend Login attempt with email:', email.toLowerCase());
+    console.log('Frontend Login attempt with email:', email.toLowerCase());
     dispatch(loginUser({ email: email.trim().toLowerCase(), password }));
   };
 

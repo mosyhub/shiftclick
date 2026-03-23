@@ -46,33 +46,6 @@ export default function AdminOrders({ navigation }) {
     }
   };
 
-  const handleUpdateStatus = (orderId, currentStatus) => {
-    Alert.alert(
-      'Update Order Status',
-      'Select new status:',
-      [
-        ...ALL_STATUSES
-          .filter((s) => s !== currentStatus)
-          .map((s) => ({
-            text: s,
-            onPress: async () => {
-              try {
-                await api.put(`/orders/${orderId}/status`, {
-                  status: s,
-                  note: `Status updated to ${s} by admin`,
-                });
-                fetchOrders();
-                Alert.alert('Updated ✅', `Order status changed to ${s}`);
-              } catch (error) {
-                Alert.alert('Error', error.response?.data?.message || 'Failed to update status');
-              }
-            },
-          })),
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
-  };
-
   const handleDeleteOrder = (orderId) => {
     Alert.alert('Delete Order', 'Are you sure you want to delete this order?', [
       { text: 'Cancel', style: 'cancel' },
@@ -140,13 +113,6 @@ export default function AdminOrders({ navigation }) {
           >
             <Ionicons name="eye-outline" size={16} color={COLORS.primary} />
             <Text style={styles.viewBtnText}>View</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.updateBtn}
-            onPress={() => handleUpdateStatus(item._id, item.status)}
-          >
-            <Ionicons name="refresh-outline" size={16} color={COLORS.accent} />
-            <Text style={styles.updateBtnText}>Status</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.deleteBtn}

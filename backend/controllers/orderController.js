@@ -6,9 +6,7 @@ const Notification = require('../models/Notification');
 
 const expo = new Expo();
 
-// @desc    Create order (checkout)
-// @route   POST /api/orders
-// @access  Private
+
 const createOrder = async (req, res) => {
   try {
     const { items, shippingAddress, paymentMethod, subtotal, shippingFee, total } = req.body;
@@ -17,7 +15,7 @@ const createOrder = async (req, res) => {
       return res.status(400).json({ message: 'No items in order' });
     }
 
-    // Validate stock for each item
+  
     for (const item of items) {
       const product = await Product.findById(item.product);
       if (!product) return res.status(404).json({ message: `Product "${item.name}" not found in database` });
@@ -26,15 +24,13 @@ const createOrder = async (req, res) => {
       }
     }
 
-    // Deduct stock
+   
     for (const item of items) {
       await Product.findByIdAndUpdate(item.product, {
         $inc: { stock: -item.quantity },
       });
     }
 
-    // For non-COD payments (GCash, Credit Card, PayPal), assume payment is already confirmed
-    // For COD, payment status remains 'Pending' until delivery confirmation
     const paymentStatusValue = (paymentMethod && paymentMethod !== 'COD') ? 'Paid' : 'Pending';
 
     const order = await Order.create({
@@ -138,22 +134,17 @@ const updateOrderStatus = async (req, res) => {
       }
     }
 
-    // Apply status
+  
     order.status = status;
 
-    // Update payment status based on order status and payment method:
-    // - For COD: Mark as Paid when order is Delivered (customer confirms receipt)
-    // - For GCash/Credit Card/PayPal: Already marked as Paid during order creation
     if (status === 'Delivered' && order.paymentMethod === 'COD') {
       order.paymentStatus = 'Paid';
     }
 
-    // Allow explicit paymentStatus override if needed (e.g., for refunds or payment failures)
     if (paymentStatus) {
       order.paymentStatus = paymentStatus;
     }
 
-    // Append to status history
     order.statusHistory.push({
       status,
       note: note || `Order ${status}`,
@@ -216,9 +207,6 @@ const updateOrderStatus = async (req, res) => {
   }
 };
 
-// @desc    Delete order (admin)
-// @route   DELETE /api/orders/:id
-// @access  Admin
 const deleteOrder = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);

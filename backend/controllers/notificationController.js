@@ -24,27 +24,29 @@ const cleanupStaleTokens = (user, daysOld = 30) => {
   return removedCount;
 };
 
-// @desc    Save or update user's push token
-// @route   POST /api/notifications/save-token
-// @access  Private
 const savePushToken = async (req, res) => {
   try {
     const { token, device } = req.body;
-    const userId = req.user.id;
+    const userId = req.user._id || req.user.id;
+
+    console.log(`📱 Attempting to save push token for user: ${userId}`);
+    console.log(`🔑 Token: ${token?.substring(0, 30)}...`);
 
     if (!token) {
+      console.warn('⚠️  No token provided');
       return res.status(400).json({ message: 'Push token is required' });
     }
 
     const user = await User.findById(userId);
     if (!user) {
+      console.error(`❌ User not found: ${userId}`);
       return res.status(404).json({ message: 'User not found' });
     }
-
-    // Clean up stale tokens (older than 30 days)
+    
+    console.log(`✅ Found user: ${user.email}`);
+    
     cleanupStaleTokens(user);
 
-    // Check if token already exists
     const tokenExists = user.expoPushTokens.some(t => t.token === token);
     
     if (!tokenExists) {
@@ -54,13 +56,12 @@ const savePushToken = async (req, res) => {
         updatedAt: new Date(),
       });
       await user.save();
-      console.log(`✅ Push token saved for user ${userId}`);
+      console.log(`✅ NEW push token saved for user ${user.email}. Total tokens: ${user.expoPushTokens.length}`);
     } else {
-      // Update timestamp
       const tokenObj = user.expoPushTokens.find(t => t.token === token);
       tokenObj.updatedAt = new Date();
       await user.save();
-      console.log(`✅ Push token updated for user ${userId}`);
+      console.log(`✅ Push token UPDATED for user ${user.email}. Total tokens: ${user.expoPushTokens.length}`);
     }
 
     res.json({ 
@@ -69,14 +70,12 @@ const savePushToken = async (req, res) => {
       activeTokens: user.expoPushTokens.length,
     });
   } catch (error) {
-    console.error('Error saving push token:', error);
+    console.error('❌ Error saving push token:', error.message);
+    console.error('Full error:', error);
     res.status(500).json({ message: error.message });
   }
 };
 
-// @desc    Send notification to a specific user
-// @route   POST /api/notifications/send-to-user
-// @access  Admin
 const sendNotificationToUser = async (req, res) => {
   try {
     const { userId, title, body, data, type = 'custom' } = req.body;
@@ -107,8 +106,6 @@ const sendNotificationToUser = async (req, res) => {
         };
 
         await expo.sendPushNotificationsAsync([message]);
-
-        // Save notification record
         await Notification.create({
           recipientId: userId,
           title,
@@ -125,7 +122,7 @@ const sendNotificationToUser = async (req, res) => {
         console.error(`Error sending to token ${token}:`, error.message);
         failedTokens.push(token);
 
-        // Save failed notification record
+      
         await Notification.create({
           recipientId: userId,
           title,
@@ -139,7 +136,7 @@ const sendNotificationToUser = async (req, res) => {
       }
     }
 
-    // Remove invalid tokens
+   
     if (failedTokens.length > 0) {
       user.expoPushTokens = user.expoPushTokens.filter(t => !failedTokens.includes(t.token));
       await user.save();
@@ -156,18 +153,15 @@ const sendNotificationToUser = async (req, res) => {
   }
 };
 
-// @desc    Send broadcast notification to all users (Promotions)
-// @route   POST /api/notifications/broadcast
-// @access  Admin
+
 const sendBroadcastNotification = async (req, res) => {
   try {
     const { title, body, data, type = 'promotion' } = req.body;
 
-    // fetch all users with Expo push tokens
     const users = await User.find({ "expoPushTokens.0": { $exists: true } });
     
     let messages = [];
-    let tokenMap = {}; // Map tokens to userId
+    let tokenMap = {};
 
     for (let user of users) {
       for (let pushToken of user.expoPushTokens) {
@@ -187,7 +181,7 @@ const sendBroadcastNotification = async (req, res) => {
 
     let sentCount = 0;
 
-    // Send notifications in chunks to avoid rate limits
+   
     let chunks = expo.chunkPushNotifications(messages);
     for (let chunk of chunks) {
       try {
@@ -227,9 +221,7 @@ const sendBroadcastNotification = async (req, res) => {
   }
 };
 
-// @desc    Get user's notifications
-// @route   GET /api/notifications/my-notifications
-// @access  Private
+
 const getMyNotifications = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -260,9 +252,7 @@ const getMyNotifications = async (req, res) => {
   }
 };
 
-// @desc    Mark notification as read
-// @route   PUT /api/notifications/:notificationId/read
-// @access  Private
+
 const markAsRead = async (req, res) => {
   try {
     const { notificationId } = req.params;
@@ -284,9 +274,7 @@ const markAsRead = async (req, res) => {
   }
 };
 
-// @desc    Mark all notifications as read
-// @route   PUT /api/notifications/mark-all-read
-// @access  Private
+
 const markAllAsRead = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -305,9 +293,7 @@ const markAllAsRead = async (req, res) => {
   }
 };
 
-// @desc    Delete a notification
-// @route   DELETE /api/notifications/:notificationId
-// @access  Private
+
 const deleteNotification = async (req, res) => {
   try {
     const { notificationId } = req.params;
@@ -328,14 +314,10 @@ const deleteNotification = async (req, res) => {
   }
 };
 
-// @desc    Cleanup stale push tokens for all users (Admin)
-// @route   POST /api/notifications/cleanup-stale-tokens
-// @access  Admin
 const cleanupStaleTokensAdmin = async (req, res) => {
   try {
     const { daysOld = 30 } = req.body;
 
-    // Get all users with push tokens
     const users = await User.find({ 'expoPushTokens.0': { $exists: true } });
     
     let totalRemoved = 0;
@@ -372,6 +354,108 @@ const cleanupStaleTokensAdmin = async (req, res) => {
   }
 };
 
+const testPushNotifications = async (req, res) => {
+  try {
+    console.log('\n🧪 TESTING PUSH NOTIFICATIONS...\n');
+
+    // Check total users and their tokens
+    const allUsers = await User.find({});
+    const usersWithTokens = await User.find({ "expoPushTokens.0": { $exists: true } });
+    
+    console.log(`📊 Test Summary:`);
+    console.log(`   Total users: ${allUsers.length}`);
+    console.log(`   Users with tokens: ${usersWithTokens.length}`);
+    console.log(`   Users without tokens: ${allUsers.length - usersWithTokens.length}\n`);
+
+    // Get current user tokens
+    const currentUser = await User.findById(req.user._id);
+    const userTokenCount = currentUser?.expoPushTokens?.length || 0;
+    
+    console.log(`👤 Current user (${currentUser.email}):`);
+    console.log(`   Tokens: ${userTokenCount}`);
+    
+    if (userTokenCount > 0) {
+      currentUser.expoPushTokens.forEach((t, idx) => {
+        console.log(`   Token ${idx + 1}: ${t.token.substring(0, 20)}... (${t.device})`);
+      });
+    }
+
+    // Send test notification to current user if they have tokens
+    let testResult = { sent: false, sentCount: 0, message: 'No tokens found' };
+    
+    if (userTokenCount > 0) {
+      console.log(`\n📤 Sending test notification...`);
+      
+      const messages = currentUser.expoPushTokens.map(t => ({
+        to: t.token,
+        sound: 'default',
+        title: '🧪 Test Notification',
+        body: 'If you see this, push notifications are working!',
+        data: { type: 'test' },
+      }));
+
+      try {
+        const results = await expo.sendPushNotificationsAsync(messages);
+        console.log(`📤 Send results:`, results);
+        
+        const successful = results.filter(r => r.status === 'ok').length;
+        testResult = {
+          sent: true,
+          sentCount: successful,
+          totalAttempted: messages.length,
+          message: `Test notification sent to ${successful}/${messages.length} tokens`,
+        };
+        
+        console.log(`✅ Test result:`, testResult);
+      } catch (sendError) {
+        console.error(`❌ Error sending test notification:`, sendError.message);
+        testResult = {
+          sent: false,
+          error: sendError.message,
+          message: 'Failed to send test notification - see logs',
+        };
+      }
+    }
+
+    // List all tokens across all users
+    console.log(`\n📋 All user tokens in system:`);
+    let totalTokens = 0;
+    usersWithTokens.slice(0, 10).forEach(user => {
+      console.log(`   ${user.email}: ${user.expoPushTokens.length} token(s)`);
+      totalTokens += user.expoPushTokens.length;
+    });
+    if (usersWithTokens.length > 10) {
+      console.log(`   ... and ${usersWithTokens.length - 10} more users`);
+      usersWithTokens.slice(10).forEach(user => {
+        totalTokens += user.expoPushTokens.length;
+      });
+    }
+    console.log(`\n📊 Total tokens in system: ${totalTokens}\n`);
+
+    res.json({
+      currentUser: {
+        email: currentUser.email,
+        tokenCount: userTokenCount,
+        tokens: currentUser.expoPushTokens.map(t => ({
+          token: t.token.substring(0, 30) + '...',
+          device: t.device,
+          updatedAt: t.updatedAt
+        }))
+      },
+      systemStats: {
+        totalUsers: allUsers.length,
+        usersWithTokens: usersWithTokens.length,
+        totalTokensInSystem: totalTokens,
+      },
+      testResult,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('❌ Error in test notifications:', error);
+    res.status(500).json({ message: error.message, error });
+  }
+};
+
 module.exports = { 
   savePushToken,
   sendNotificationToUser,
@@ -381,4 +465,5 @@ module.exports = {
   markAllAsRead,
   deleteNotification,
   cleanupStaleTokensAdmin,
+  testPushNotifications,
 };
