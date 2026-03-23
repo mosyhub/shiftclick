@@ -157,46 +157,71 @@ const updateOrderStatus = async (req, res) => {
     const pushTokens = order.user?.expoPushTokens || [];
     if (pushTokens.length > 0) {
       const messages = [];
+      const tokenMap = {}; // Track which message belongs to which token
+      
       for (const tokenObj of pushTokens) {
         if (!Expo.isExpoPushToken(tokenObj.token)) continue;
-        messages.push({
+        
+        const message = {
           to: tokenObj.token,
           sound: 'default',
           title: `Order ${status} 📦`,
           body: `Your order #${order._id.toString().slice(-6).toUpperCase()} is now ${status}`,
           data: { orderId: order._id.toString(), screen: 'OrderDetail' },
-        });
+        };
+        messages.push(message);
+        tokenMap[tokenObj.token] = tokenObj;
       }
+      
       if (messages.length > 0) {
         const chunks = expo.chunkPushNotifications(messages);
+        console.log(`📨 Order notification: ${messages.length} messages in ${chunks.length} chunk(s)`);
+        
         for (const chunk of chunks) {
           try { 
-            await expo.sendPushNotificationsAsync(chunk); 
+            const results = await expo.sendPushNotificationsAsync(chunk);
             
-            // Save notification records to database for each token
-            for (const tokenObj of pushTokens) {
-              if (!Expo.isExpoPushToken(tokenObj.token)) continue;
+            // Process results and save notification records only for successful sends
+            for (let i = 0; i < results.length; i++) {
+              const result = results[i];
+              const message = chunk[i];
+              const tokenObj = tokenMap[message.to];
               
               try {
-                await Notification.create({
-                  recipientId: order.user._id,
-                  title: `Order ${status} 📦`,
-                  body: `Your order #${order._id.toString().slice(-6).toUpperCase()} is now ${status}`,
-                  data: {
-                    screen: 'OrderDetail',
-                    orderId: order._id,
-                  },
-                  type: 'order',
-                  expoToken: tokenObj.token,
-                  status: 'sent',
-                  sentAt: new Date(),
-                });
+                if (result.status === 'ok') {
+                  console.log(`✅ Order notification sent to ${message.to.substring(0, 20)}...`);
+                  await Notification.create({
+                    recipientId: order.user._id,
+                    title: message.title,
+                    body: message.body,
+                    data: message.data,
+                    type: 'order',
+                    expoToken: message.to,
+                    status: 'sent',
+                    sentAt: new Date(),
+                  });
+                } else {
+                  console.error(`❌ Order notification failed for ${message.to.substring(0, 20)}...`, result);
+                  await Notification.create({
+                    recipientId: order.user._id,
+                    title: message.title,
+                    body: message.body,
+                    data: message.data,
+                    type: 'order',
+                    expoToken: message.to,
+                    status: 'failed',
+                    errorMessage: result.message || 'Unknown error',
+                    sentAt: new Date(),
+                  });
+                }
               } catch (dbErr) {
                 console.error('Error saving notification to DB:', dbErr.message);
               }
             }
           }
-          catch (err) { console.error('Push error:', err); }
+          catch (err) { 
+            console.error('Push error:', err.message); 
+          }
         }
       }
     }
