@@ -26,7 +26,7 @@
       "permissions": [
         "android.permission.POST_NOTIFICATIONS"
       ],
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
