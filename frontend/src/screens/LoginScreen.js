@@ -7,6 +7,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { loginUser, googleSignIn, clearError } from '../redux/slices/authSlice';
 import { COLORS } from '../constants/theme';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { initializeGoogleSignIn, handleGoogleSignIn } from '../utils/googleSignIn';
 
 export default function LoginScreen({ navigation }) {
@@ -18,11 +19,27 @@ export default function LoginScreen({ navigation }) {
   const [googleLoading, setGoogleLoading] = useState(false);
 
   useEffect(() => {
+    const checkPlayServices = async () => {
+      try {
+        const result = await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+        console.log('✅ Play Services available:', result);
+      } catch (error) {
+        console.error('❌ Play Services error:', error);
+        Alert.alert('Play Services Error', error.message);
+      }
+    };
+    
+    checkPlayServices();
     initializeGoogleSignIn();
+    console.log('🔧 Google Sign-In initialized with Web Client ID:', process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID);
   }, []);
 
   useEffect(() => {
-    if (error) { Alert.alert('Login Failed', error); dispatch(clearError()); }
+    if (error) { 
+      console.error('❌ Auth Error:', error);
+      Alert.alert('Login Failed', error); 
+      dispatch(clearError()); 
+    }
   }, [error]);
 
   const handleLogin = () => {
@@ -32,15 +49,25 @@ export default function LoginScreen({ navigation }) {
   };
 
   const handleGoogleLogin = async () => {
+    console.log('🔄 Starting Google Sign-In...');
     setGoogleLoading(true);
-    const result = await handleGoogleSignIn();
-    setGoogleLoading(false);
+    try {
+      const result = await handleGoogleSignIn();
+      console.log('🔐 Google Sign-In Result:', result);
+      setGoogleLoading(false);
 
-    if (result.success) {
-      const { email: googleEmail, name, idToken } = result.user;
-      dispatch(googleSignIn({ email: googleEmail, name, idToken }));
-    } else {
-      Alert.alert('Sign In Failed', result.message);
+      if (result.success) {
+        const { email: googleEmail, name, idToken } = result.user;
+        console.log('✅ Google Sign-In Success - Email:', googleEmail);
+        dispatch(googleSignIn({ email: googleEmail, name, idToken }));
+      } else {
+        console.error('❌ Google Sign-In Failed:', result.message);
+        Alert.alert('Sign In Failed', result.message);
+      }
+    } catch (err) {
+      console.error('❌ Google Sign-In Exception:', err);
+      setGoogleLoading(false);
+      Alert.alert('Sign In Error', err.message);
     }
   };
 

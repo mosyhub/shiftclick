@@ -14,12 +14,16 @@
       },
       "oauth_client": [
         {
-          "client_id": "666977520356-v29bcn2f0pupvm7mgpdtoc4g9vbgktrv.apps.googleusercontent.com",
-          "client_type": 3,
+          "client_id": "934516610022-b85c338p9nhb2epe60igpefu3r7p2ob5.apps.googleusercontent.com",
+          "client_type": 1,
           "android_info": {
             "package_name": "com.shiftclick.frontend",
-            "sha1_hash": "D0:D5:AF:C8:EB:43:53:E5:40:DA:42:24:F2:CC:11:36:B1:6D:2D:5D"
+            "certificate_hash": "d0d5afc8eb4353e540da4224f2cc1136b16d2d5d"
           }
+        },
+        {
+          "client_id": "934516610022-31117nhu2ftbohbpjs9vjabf41pta29p.apps.googleusercontent.com",
+          "client_type": 3
         }
       ],
       "api_key": [
@@ -31,8 +35,8 @@
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "666977520356-v29bcn2f0pupvm7mgpdtoc4g9vbgktrv.apps.googleusercontent.com",
-              "client_type": 1
+              "client_id": "934516610022-31117nhu2ftbohbpjs9vjabf41pta29p.apps.googleusercontent.com",
+              "client_type": 3
             }
           ]
         }

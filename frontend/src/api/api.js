@@ -1,7 +1,8 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-const BASE_URL = 'http://10.190.23.175:5000/api/';
+// Use production backend for all builds (development uses same backend)
+const BASE_URL = 'https://shiftclick.onrender.com/api/';
 
 const api = axios.create({
   baseURL: BASE_URL,
