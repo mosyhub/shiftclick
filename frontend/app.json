@@ -4,7 +4,7 @@
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/Shift_Click.jpg",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/Shift_Click.jpg",
@@ -26,7 +26,7 @@
       "permissions": [
         "android.permission.POST_NOTIFICATIONS"
       ],
-      "usesCleartextTraffic": false
+      "usesCleartextTraffic": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -45,14 +45,15 @@
         }
       ]
     ],
-    "extra": {
-      "eas": {
-        "projectId": "c81338ac-659f-46dc-9ac2-a3358eae9dfd"
-      }
-    },
     "scheme": "myapp",
     "developmentClient": {
       "silentLaunchAndroidActivity": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "76720223-91d7-4c14-a580-9a0188a2beec"
+      }
+    },
+    "owner": "eisergryn"
   }
 }

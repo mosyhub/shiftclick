@@ -12,7 +12,16 @@
           "package_name": "com.shiftclick.frontend"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "666977520356-v29bcn2f0pupvm7mgpdtoc4g9vbgktrv.apps.googleusercontent.com",
+          "client_type": 3,
+          "android_info": {
+            "package_name": "com.shiftclick.frontend",
+            "sha1_hash": "D0:D5:AF:C8:EB:43:53:E5:40:DA:42:24:F2:CC:11:36:B1:6D:2D:5D"
+          }
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBNmGEOf_C1c0HWwFWhbSsvtYOjvB2gDtw"
@@ -20,7 +29,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "666977520356-v29bcn2f0pupvm7mgpdtoc4g9vbgktrv.apps.googleusercontent.com",
+              "client_type": 1
+            }
+          ]
         }
       }
     }
